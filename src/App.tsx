@@ -16,7 +16,6 @@ import {
   randomizeBoardPregame,
   setBoardHexCountPregame,
   setPlayerCountPregame,
-  setSkipPlacementStartPregame,
   tickReinforcementAnimation,
 } from './engine/rules'
 import { BoardChrome } from './ui/BoardChrome'
@@ -74,7 +73,6 @@ export default function App() {
     setGame((prev) =>
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
-        skipPlacementStart: prev.skipPlacementStart,
       }),
     )
     setError(null)
@@ -85,16 +83,6 @@ export default function App() {
     setGame((prev) => {
       const s = structuredClone(prev)
       const err = setPlayerCountPregame(s, n)
-      if (err) queueMicrotask(() => setError(err))
-      return s
-    })
-  }, [])
-
-  const onSetSkipPlacementStart = useCallback((value: boolean) => {
-    setError(null)
-    setGame((prev) => {
-      const s = structuredClone(prev)
-      const err = setSkipPlacementStartPregame(s, value)
       if (err) queueMicrotask(() => setError(err))
       return s
     })
@@ -205,7 +193,6 @@ export default function App() {
     setGame((prev) =>
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
-        skipPlacementStart: prev.skipPlacementStart,
       }),
     )
     setError(null)
@@ -213,7 +200,7 @@ export default function App() {
 
   return (
     <div className="dice-wars-app">
-      <HUD game={game} onSkipAiTurns={onSkipAiTurns} onNewGameConfirmed={onNewGameConfirmed} errorMessage={error} />
+      <HUD game={game} onNewGameConfirmed={onNewGameConfirmed} errorMessage={error} />
 
       <div className="dw-board-wrap">
         <GameCanvas
@@ -228,8 +215,8 @@ export default function App() {
           onRandomizeBoard={onRandomizeBoard}
           onStartGame={onStartGame}
           onEndTurn={onEndTurn}
+          onSkipAiTurns={onSkipAiTurns}
           onSetPlayerCount={onSetPlayerCount}
-          onSetSkipPlacementStart={onSetSkipPlacementStart}
           onSetBoardHexPreset={onSetBoardHexPreset}
         />
       </div>

@@ -22,7 +22,7 @@ describe('buildPlacementOrder', () => {
 
 describe('skip placement start', () => {
   it('gives each player mult× their hex count in dice (1–8 per hex) and starts in battle', () => {
-    const s = createInitialGameState(22, { playerCount: 3, skipPlacementStart: true })
+    const s = createInitialGameState(22, { playerCount: 3 })
     const pc = s.playerCount
     for (let p = 1; p <= pc; p++) {
       const mine = s.tileIds.filter((id) => s.tiles[id].owner === p)
@@ -48,7 +48,7 @@ describe('MAX_DICE_PER_HEX', () => {
   })
 
   it('placement does not raise dice above 8', () => {
-    const s = createInitialGameState(20)
+    const s = createInitialGameState(20, { skipPlacementStart: false })
     beginPlacementFromPregame(s)
     const p = s.currentPlayer
     const hex = s.tileIds.find((id) => s.tiles[id].owner === p)!
@@ -60,7 +60,7 @@ describe('MAX_DICE_PER_HEX', () => {
 
 describe('placement one die per click', () => {
   it('adds one die per click and advances turn after five clicks', () => {
-    const s = createInitialGameState(20)
+    const s = createInitialGameState(20, { skipPlacementStart: false })
     beginPlacementFromPregame(s)
     const p0 = s.currentPlayer
     const owned = s.tileIds.filter((id) => s.tiles[id].owner === p0)
@@ -77,7 +77,7 @@ describe('placement one die per click', () => {
   })
 
   it('can spread five dice across different owned hexes', () => {
-    const s = createInitialGameState(25)
+    const s = createInitialGameState(25, { skipPlacementStart: false })
     beginPlacementFromPregame(s)
     const p = s.currentPlayer
     const mine = s.tileIds.filter((id) => s.tiles[id].owner === p)
@@ -98,7 +98,7 @@ describe('placement one die per click', () => {
 
 describe('reinforcement animation', () => {
   it('queues dice then tick applies one at a time', () => {
-    const s = createInitialGameState(15)
+    const s = createInitialGameState(15, { skipPlacementStart: false })
     beginPlacementFromPregame(s)
     // Skip to battle — not worth full placement; set phase manually with tiles
     s.phase = 'BATTLE'
@@ -132,7 +132,7 @@ describe('reinforcement animation', () => {
   })
 
   it('skips reinforcement when every owned hex is already at max dice', () => {
-    const s = createInitialGameState(20)
+    const s = createInitialGameState(20, { skipPlacementStart: false })
     beginPlacementFromPregame(s)
     s.phase = 'BATTLE'
     s.currentPlayer = 1

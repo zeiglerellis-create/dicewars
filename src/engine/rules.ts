@@ -130,13 +130,14 @@ function syncPregameTileDice(state: GameState, rng: Rng): void {
 
 export interface CreateGameOptions {
   playerCount?: number
+  /** @default true (battle start). Pass `false` only for tests of the placement phase. */
   skipPlacementStart?: boolean
 }
 
 export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOptions): GameState {
   const n = clampBoardHexCount(boardHexCount)
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
-  const skipPlacementStart = opts?.skipPlacementStart ?? false
+  const skipPlacementStart = opts?.skipPlacementStart ?? true
   const rng = createRng(randomSeed32())
   const board = generateBoard(rng, n)
   assignRandomOwners(rng, board.tiles, board.tileIds, playerCount)
@@ -224,14 +225,6 @@ export function setPlayerCountPregame(state: GameState, raw: number): string | n
   const rng = attachRng(state)
   state.tiles = cloneTiles(state.tiles)
   assignRandomOwners(rng, state.tiles, state.tileIds, state.playerCount)
-  syncPregameTileDice(state, rng)
-  return null
-}
-
-export function setSkipPlacementStartPregame(state: GameState, value: boolean): string | null {
-  if (state.phase !== 'PREGAME') return 'Only during setup'
-  state.skipPlacementStart = value
-  const rng = attachRng(state)
   syncPregameTileDice(state, rng)
   return null
 }
@@ -521,7 +514,6 @@ export function flushReinforcementAnimation(state: GameState): void {
 export function resetGame(state: GameState): void {
   const next = createInitialGameState(state.boardHexCount, {
     playerCount: state.playerCount,
-    skipPlacementStart: state.skipPlacementStart,
   })
   Object.assign(state, next)
 }

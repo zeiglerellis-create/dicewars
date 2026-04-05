@@ -4,13 +4,12 @@ import { playerTerritoryStats } from '../engine/scoring'
 
 export interface HUDProps {
   game: GameState
-  onSkipAiTurns: () => void
   /** Called only after the two-step confirmation completes. */
   onNewGameConfirmed: () => void
   errorMessage: string | null
 }
 
-export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: HUDProps) {
+export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
   const [newGameStep, setNewGameStep] = useState<0 | 1 | 2>(0)
   const newGameTitleId = useId()
 
@@ -23,22 +22,8 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
     return () => window.removeEventListener('keydown', onKey)
   }, [newGameStep])
 
-  const p = game.currentPlayer
-  const color = game.players.colors[p]
-
-  const phaseLabel =
-    game.phase === 'PREGAME'
-      ? 'Setup'
-      : game.phase === 'PLACEMENT'
-        ? 'Placement'
-        : game.phase === 'BATTLE'
-          ? 'Battle'
-          : 'Over'
-
-  const botsTurn =
-    (game.phase === 'PLACEMENT' || game.phase === 'BATTLE') && game.players.isBot[game.currentPlayer]
-
-  const showTurnInToolbar = game.phase !== 'PREGAME' && game.phase !== 'GAME_OVER'
+  const showCurrentPlayerOutline =
+    game.phase !== 'PREGAME' && game.phase !== 'GAME_OVER'
 
   const playerRowsAll = Array.from({ length: game.playerCount }, (_, i) => {
     const id = (i + 1) as PlayerId
@@ -54,36 +39,6 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
       <div className="toolbar-top-cluster">
         <div className="toolbar-row toolbar-title">
           <h1 className="toolbar-brand">Dice Wars</h1>
-          <span className="toolbar-phase">{phaseLabel}</span>
-          {showTurnInToolbar && (
-            <span
-              className={
-                'toolbar-player toolbar-turn' +
-                (game.players.isBot[p] ? ' toolbar-turn--ai' : ' toolbar-turn--you')
-              }
-              style={{ color }}
-            >
-              <span className="toolbar-turn-dot" aria-hidden />
-              <span className="toolbar-turn-label">Turn</span>
-              <span className="toolbar-turn-who">
-                P{p}
-                {game.players.isBot[p] ? ' · AI' : ' · you'}
-              </span>
-            </span>
-          )}
-          {botsTurn && (
-            <button
-              type="button"
-              className="btn btn-sm skip-ai-inline"
-              onClick={onSkipAiTurns}
-              title="Finish AI moves and return to your turn"
-            >
-              Skip AI
-            </button>
-          )}
-          <span className="toolbar-meta">
-            {game.playerCount}p · {game.boardHexCount} hex
-          </span>
           <button
             type="button"
             className="btn btn-sm toolbar-new-game"
@@ -99,7 +54,7 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
       <div className="toolbar-player-strip-wrap">
         <div className="player-strip" role="list" aria-label="Players and territory">
           {playerRows.map(({ id, owned, totalDice, largestTouchingGroup }) => {
-            const isActive = showTurnInToolbar && id === game.currentPlayer
+            const isActive = showCurrentPlayerOutline && id === game.currentPlayer
             const rowColor = game.players.colors[id]
             const clusterPct = Math.round((100 * largestTouchingGroup) / maxCluster)
             const tiesForTopCluster =
@@ -110,6 +65,7 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
               <article
                 key={id}
                 role="listitem"
+                aria-current={isActive ? 'true' : undefined}
                 className={
                   'player-card' +
                   (isActive ? ' player-card--active' : '') +
@@ -134,9 +90,26 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
                         ◆
                       </span>
                     )}
-                    {isActive && <span className="player-card__turn">Turn</span>}
                   </div>
                 </header>
+                <div
+                  className="player-card__compact-metrics"
+                  title="Linked cluster (reinforcement size), tiles owned, total dice"
+                  aria-label={`Player ${id}: ${largestTouchingGroup} linked, ${owned} tiles, ${totalDice} dice`}
+                >
+                  <div className="player-card__compact-metric">
+                    <span className="player-card__compact-val">{largestTouchingGroup}</span>
+                    <span className="player-card__compact-lbl">Linked</span>
+                  </div>
+                  <div className="player-card__compact-metric">
+                    <span className="player-card__compact-val">{owned}</span>
+                    <span className="player-card__compact-lbl">tiles</span>
+                  </div>
+                  <div className="player-card__compact-metric">
+                    <span className="player-card__compact-val">{totalDice}</span>
+                    <span className="player-card__compact-lbl">dice</span>
+                  </div>
+                </div>
                 <div className="player-card__cluster">
                   <div className="player-card__cluster-head">
                     <span className="player-card__cluster-num">{largestTouchingGroup}</span>
@@ -201,8 +174,8 @@ export function HUD({ game, onSkipAiTurns, onNewGameConfirmed, errorMessage }: H
               <>
                 <h2 id={newGameTitleId}>Confirm new game</h2>
                 <p>
-                  <strong>Last step:</strong> discard this game and generate a fresh board with the same player count,
-                  board size, and skip-placement setting?
+                  <strong>Last step:</strong> discard this game and generate a fresh board with the same player count
+                  and board size?
                 </p>
                 <div className="modal-actions modal-actions--row">
                   <button type="button" className="btn" onClick={() => setNewGameStep(0)}>

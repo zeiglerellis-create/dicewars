@@ -37,11 +37,7 @@
 }
 
 .toolbar-new-game {
-  margin-left: 0.35rem;
-}
-
-.skip-ai-inline {
-  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .toolbar-row {
@@ -60,87 +56,6 @@
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-h);
-}
-
-.toolbar-phase {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.toolbar-player {
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.toolbar-turn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.1rem 0.45rem 0.1rem 0.32rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.toolbar-turn--you {
-  border-color: rgba(255, 255, 255, 0.26);
-  animation: dw-toolbar-turn-you 2.4s ease-in-out infinite;
-}
-
-.toolbar-turn-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 6px currentColor;
-  flex-shrink: 0;
-}
-
-.toolbar-turn--you .toolbar-turn-dot {
-  animation: dw-turn-dot-pulse 1.3s ease-in-out infinite;
-}
-
-.toolbar-turn-label {
-  font-size: 0.55rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.72;
-}
-
-.toolbar-turn-who {
-  font-weight: 700;
-}
-
-@keyframes dw-toolbar-turn-you {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-  50% {
-    box-shadow: 0 0 14px 1px rgba(255, 255, 255, 0.07);
-  }
-}
-
-@keyframes dw-turn-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.55;
-    transform: scale(0.92);
-  }
-}
-
-.toolbar-meta {
-  font-size: 0.65rem;
-  color: var(--text);
-  margin-left: auto;
 }
 
 .toolbar-actions .toolbar-field {
@@ -193,6 +108,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 0.42rem;
+}
+
+/* Hidden on desktop — mobile shows this instead of cluster + bar + foot */
+.player-card__compact-metrics {
+  display: none;
 }
 
 .player-card {
@@ -317,18 +237,6 @@
   letter-spacing: 0.08em;
   color: var(--text);
   opacity: 0.78;
-}
-
-.player-card__turn {
-  font-size: 0.5rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  padding: 0.12rem 0.38rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--player-accent) 32%, rgba(255, 255, 255, 0.08));
-  color: var(--text-h);
-  border: 1px solid color-mix(in srgb, var(--player-accent) 45%, transparent);
 }
 
 .player-card__crown {
@@ -581,22 +489,6 @@
   max-width: 100%;
 }
 
-.dw-setup-check {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.35rem;
-  font-size: 0.62rem;
-  line-height: 1.35;
-  color: #e2e8f0;
-  cursor: pointer;
-}
-
-.dw-setup-check input {
-  margin-top: 0.12rem;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
 .dw-setup-size-btns {
   display: flex;
   flex-wrap: wrap;
@@ -668,6 +560,138 @@
   top: 0.5rem;
   left: 50%;
   transform: translateX(-50%);
+}
+
+.dw-board-actions-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+}
+
+.btn-board.dw-board-action--secondary {
+  background: rgba(15, 17, 23, 0.55);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* ——— Mobile: taller board, compact player strip, key stats only ——— */
+@media (max-width: 720px) {
+  .dice-wars-app {
+    padding: 0.22rem 0.32rem 0.32rem;
+    /* More vertical space for the hex canvas */
+    --board-fixed-h: min(82dvh, calc(100dvh - 5.25rem));
+  }
+
+  .game-toolbar {
+    gap: 0.2rem;
+    margin-bottom: 0.22rem;
+    padding-bottom: 0.22rem;
+  }
+
+  .toolbar-brand {
+    font-size: 0.86rem;
+  }
+
+  .toolbar-new-game {
+    padding: 0.22rem 0.38rem;
+    font-size: 0.58rem;
+  }
+
+  .player-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.22rem;
+  }
+
+  .player-card {
+    padding: 0.24rem 0.26rem 0.22rem;
+    gap: 0.12rem;
+    border-radius: 7px;
+  }
+
+  .player-card__glow {
+    opacity: 0.2;
+  }
+
+  .player-card__swatch {
+    width: 7px;
+    height: 7px;
+  }
+
+  .player-card__pn {
+    font-size: 0.58rem;
+  }
+
+  .player-card__role {
+    font-size: 0.42rem;
+    letter-spacing: 0.06em;
+  }
+
+  .player-card__crown {
+    display: none;
+  }
+
+  .player-card__cluster {
+    display: none;
+  }
+
+  .player-card__foot {
+    display: none;
+  }
+
+  .player-card__compact-metrics {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+    gap: 0.1rem;
+    padding: 0.1rem 0 0.04rem;
+    font-size: 0.52rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-h);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: 0.02rem;
+  }
+
+  .player-card__compact-metric {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 0.22rem;
+    white-space: nowrap;
+    line-height: 1.15;
+  }
+
+  .player-card__compact-val {
+    font-weight: 800;
+    min-width: 1.1em;
+    text-align: right;
+  }
+
+  .player-card__compact-lbl {
+    font-weight: 600;
+    color: var(--text);
+    opacity: 0.88;
+    letter-spacing: 0.02em;
+  }
+
+  .dw-board-wrap {
+    min-height: 200px;
+  }
+
+  .dw-board-prompt-title {
+    font-size: 0.72rem;
+  }
+
+  .dw-board-prompt-detail {
+    font-size: 0.58rem;
+  }
+
+  .btn-board {
+    padding: 0.34rem 0.72rem;
+    font-size: 0.7rem;
+  }
 }
 
 .dw-float-refresh {

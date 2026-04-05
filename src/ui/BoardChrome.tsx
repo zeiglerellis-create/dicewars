@@ -9,8 +9,8 @@ export interface BoardChromeProps {
   onRandomizeBoard: () => void
   onStartGame: () => void
   onEndTurn: () => void
+  onSkipAiTurns: () => void
   onSetPlayerCount: (n: number) => void
-  onSetSkipPlacementStart: (value: boolean) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
 }
 
@@ -32,7 +32,7 @@ function placementPrompt(game: GameState): { title: string; detail: string } | n
   if (game.players.isBot[p]) {
     return {
       title: 'AI is placing dice…',
-      detail: 'Watch the board or use Skip AI in the bar above.',
+      detail: 'Watch the board or tap Skip AI on the board (next to End turn when shown).',
     }
   }
   return {
@@ -47,7 +47,7 @@ function battlePrompt(game: GameState): { title: string; detail: string } | null
   if (game.players.isBot[p]) {
     return {
       title: 'AI is taking its battle turn…',
-      detail: 'Use Skip AI above to jump ahead.',
+      detail: 'Tap Skip AI at the top of the board (same row as End turn on your turns).',
     }
   }
   const sel = game.battle.selection.selectedAttackerHexId
@@ -68,8 +68,8 @@ export function BoardChrome({
   onRandomizeBoard,
   onStartGame,
   onEndTurn,
+  onSkipAiTurns,
   onSetPlayerCount,
-  onSetSkipPlacementStart,
   onSetBoardHexPreset,
 }: BoardChromeProps) {
   const p = game.currentPlayer
@@ -79,19 +79,19 @@ export function BoardChrome({
     !game.players.isBot[p] &&
     !game.reinforcementAnimation
 
+  const showSkipAi =
+    (game.phase === 'PLACEMENT' || game.phase === 'BATTLE') &&
+    game.players.isBot[p] &&
+    !game.reinforcementAnimation
+
   const pregame = game.phase === 'PREGAME'
 
   const prompt = pregame
-    ? game.skipPlacementStart
-      ? {
-          title: `Ready · ${game.playerCount} players`,
-          detail:
-            'Skip placement: 4× dice per tile count, random on your tiles (max 8). ↻ new map; Start when ready.',
-        }
-      : {
-          title: `Ready · ${game.playerCount} players`,
-          detail: 'Choose players, board size, and options on the left, then Start game. ↻ rolls a new map.',
-        }
+    ? {
+        title: `Ready · ${game.playerCount} players`,
+        detail:
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). ↻ new map; Start when ready.',
+      }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 
   return (
@@ -126,15 +126,6 @@ export function BoardChrome({
                 ))}
               </select>
             </div>
-
-            <label className="dw-setup-check">
-              <input
-                type="checkbox"
-                checked={game.skipPlacementStart}
-                onChange={(e) => onSetSkipPlacementStart(e.target.checked)}
-              />
-              <span>Skip placement (start in battle)</span>
-            </label>
 
             <div className="dw-setup-field">
               <span className="dw-setup-field-label" id="dw-setup-board-label">
@@ -190,11 +181,25 @@ export function BoardChrome({
         </div>
       )}
 
-      {canEndTurn && (
+      {(canEndTurn || showSkipAi) && (
         <div className="dw-board-float dw-board-float--endturn">
-          <button type="button" className="btn btn-board primary" onClick={onEndTurn}>
-            End turn
-          </button>
+          <div className="dw-board-actions-row">
+            {showSkipAi && (
+              <button
+                type="button"
+                className="btn btn-board dw-board-action--secondary"
+                onClick={onSkipAiTurns}
+                title="Finish AI moves and return to your turn"
+              >
+                Skip AI
+              </button>
+            )}
+            {canEndTurn && (
+              <button type="button" className="btn btn-board primary" onClick={onEndTurn}>
+                End turn
+              </button>
+            )}
+          </div>
         </div>
       )}
     </>
