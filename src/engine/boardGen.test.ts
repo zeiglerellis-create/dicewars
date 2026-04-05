@@ -1,12 +1,46 @@
 import { describe, expect, it } from 'vitest'
 import { createRng } from './rng'
 import {
+  BOARD_HEX_MIN,
+  TUNNEL_PAIR_COUNT,
   generateBoard,
   validateAdjacencySymmetric,
   validateConnectivity,
   validateCount,
-  BOARD_HEX_MIN,
 } from './boardGen'
+
+describe('tunnels', () => {
+  it('adds up to four symmetric links between non-adjacent perimeter hexes', () => {
+    const rng = createRng(1202)
+    const { tiles, tileIds, tunnels } = generateBoard(rng, 40)
+    expect(tunnels.length).toBeGreaterThan(0)
+    expect(tunnels.length).toBeLessThanOrEqual(TUNNEL_PAIR_COUNT)
+    expect(validateAdjacencySymmetric(tiles)).toBe(true)
+    expect(validateConnectivity(tiles, tileIds, 40)).toBe(true)
+    const seen = new Set<string>()
+    for (const [a, b] of tunnels) {
+      expect(a).not.toBe(b)
+      expect(tileIds.includes(a)).toBe(true)
+      expect(tileIds.includes(b)).toBe(true)
+      expect(tiles[a].neighbors.includes(b)).toBe(true)
+      expect(tiles[b].neighbors.includes(a)).toBe(true)
+      expect(tiles[a].neighbors.length).toBeLessThanOrEqual(7)
+      expect(tiles[b].neighbors.length).toBeLessThanOrEqual(7)
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`
+      expect(seen.has(key)).toBe(false)
+      seen.add(key)
+    }
+  })
+
+  it('often reaches the tunnel budget on 40-hex boards', () => {
+    let four = 0
+    for (let s = 0; s < 32; s++) {
+      const rng = createRng(8800 + s)
+      if (generateBoard(rng, 40).tunnels.length === TUNNEL_PAIR_COUNT) four++
+    }
+    expect(four).toBeGreaterThanOrEqual(20)
+  })
+})
 
 describe('boardGen', () => {
   it('creates exactly N tiles', () => {

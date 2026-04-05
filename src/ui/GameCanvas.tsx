@@ -68,8 +68,8 @@ export function GameCanvas({
   const [popFrame, setPopFrame] = useState(0)
   const plusOneAnimRef = useRef<{ hexId: string; start: number } | null>(null)
 
-  /** Only changes when hex layout changes — avoids resetting canvas size every game tick (reinforcement blink). */
-  const boardTopologyKey = `${game.boardHexCount}|${game.tileIds.join(',')}`
+  /** Only changes when hex layout or tunnels change — avoids resetting canvas size every game tick. */
+  const boardTopologyKey = `${game.boardHexCount}|${game.tileIds.join(',')}|${game.tunnels.map(([a, b]) => `${a}~${b}`).join('|')}`
 
   useEffect(() => {
     if (!reinforcementPop) return
@@ -157,6 +157,54 @@ export function GameCanvas({
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     ctx.setTransform(scale, 0, 0, scale, ox, oy)
+
+    const tun = game.tunnels
+    if (tun.length > 0) {
+      let tcx = 0
+      let tcy = 0
+      for (const id of game.tileIds) {
+        tcx += game.tiles[id].center.x
+        tcy += game.tiles[id].center.y
+      }
+      tcx /= game.tileIds.length
+      tcy /= game.tileIds.length
+
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      for (const [ia, ib] of tun) {
+        const ta = game.tiles[ia]
+        const tb = game.tiles[ib]
+        if (!ta || !tb) continue
+        const ax = ta.center.x
+        const ay = ta.center.y
+        const bx = tb.center.x
+        const by = tb.center.y
+        const mx = (ax + bx) / 2
+        const my = (ay + by) / 2
+        const dx = bx - ax
+        const dy = by - ay
+        const len = Math.hypot(dx, dy) || 1
+        let px = -dy / len
+        let py = dx / len
+        const oxw = mx - tcx
+        const oyw = my - tcy
+        if (px * oxw + py * oyw < 0) {
+          px = -px
+          py = -py
+        }
+        const bulge = 0.42 * len
+        const c1x = mx + px * bulge
+        const c1y = my + py * bulge
+        ctx.beginPath()
+        ctx.moveTo(ax, ay)
+        ctx.quadraticCurveTo(c1x, c1y, bx, by)
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.4)'
+        ctx.lineWidth = 0.095
+        ctx.setLineDash([0.15, 0.1])
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+    }
 
     const sel = game.battle.selection
     const p = game.currentPlayer

@@ -57,7 +57,8 @@ function battlePrompt(game: GameState): { title: string; detail: string } | null
   const sel = game.battle.selection.selectedAttackerHexId
   return {
     title: sel ? 'Choose an adjacent enemy hex to attack' : 'Choose one of your hexes to attack from',
-    detail: 'Need at least 2 dice on the attacker. When finished, tap the end-turn (arrow) icon by the directions.',
+    detail:
+      'Need at least 2 dice on the attacker. Tunnels count as adjacency. When finished, tap the end-turn (arrow) icon.',
   }
 }
 
@@ -114,7 +115,7 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Four tunnels link random edge hexes (dashed arcs). ↻ new map; Start when ready.',
       }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 

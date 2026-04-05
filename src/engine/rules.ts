@@ -167,6 +167,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
     currentPlayer: 1,
     tiles: board.tiles,
     tileIds: board.tileIds,
+    tunnels: board.tunnels,
     placement: {
       remainingByPlayer: buildPlacementRemaining(playerCount),
       order,
@@ -188,6 +189,7 @@ function regenerateBoardAtCurrentSize(state: GameState): string | null {
   assignRandomOwners(rng, board.tiles, board.tileIds, state.playerCount)
   state.tiles = board.tiles
   state.tileIds = board.tileIds
+  state.tunnels = board.tunnels
   state.logs = []
   state.lastBattleOverlay = undefined
   state.reinforcementAnimation = undefined

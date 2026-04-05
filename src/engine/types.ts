@@ -88,4 +88,9 @@ export interface GameState {
   }
   /** Latest reinforcement +1 for float animation (UI may clear after display) */
   reinforcementPop?: { hexId: string; seq: number }
+  /**
+   * Extra adjacency (wormholes): each pair is two distinct perimeter hexes linked for movement,
+   * attacks, and largest-cluster scoring. Generated with the map.
+   */
+  tunnels: [string, string][]
 }

@@ -38,6 +38,52 @@ export function clampBoardHexCount(n: number): number {
   return Math.min(BOARD_HEX_MAX, Math.max(BOARD_HEX_MIN, Math.floor(Number(n))))
 }
 
+/** Perimeter hexes (at least one empty axial neighbor slot on the island). */
+export const TUNNEL_PAIR_COUNT = 4
+
+function boundaryHexIds(tiles: Record<string, HexTile>, tileIds: string[]): string[] {
+  return tileIds.filter((id) => tiles[id].neighbors.length < 6)
+}
+
+/**
+ * Add `pairCount` tunnel edges between random boundary hexes (not already grid-adjacent).
+ * Mutates `tiles` neighbors symmetrically. Returns the pairs for UI / state.
+ */
+function addRandomTunnels(
+  rng: Rng,
+  tiles: Record<string, HexTile>,
+  tileIds: string[],
+  pairCount: number,
+): [string, string][] {
+  const boundary = boundaryHexIds(tiles, tileIds)
+  if (boundary.length < 2 || pairCount <= 0) return []
+
+  const candidates: [string, string][] = []
+  for (let i = 0; i < boundary.length; i++) {
+    for (let j = i + 1; j < boundary.length; j++) {
+      const a = boundary[i]!
+      const b = boundary[j]!
+      if (tiles[a].neighbors.includes(b)) continue
+      candidates.push([a, b])
+    }
+  }
+  shuffleInPlace(rng, candidates)
+
+  const pairs: [string, string][] = []
+  const used = new Set<string>()
+  for (const [a, b] of candidates) {
+    if (pairs.length >= pairCount) break
+    if (used.has(a) || used.has(b)) continue
+    tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
+    tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
+    used.add(a)
+    used.add(b)
+    pairs.push([a, b])
+  }
+
+  return pairs
+}
+
 function maxDegreeOneTiles(size: number): number {
   return Math.min(25, Math.max(4, Math.floor(size * 0.12)))
 }
@@ -212,6 +258,7 @@ export interface GeneratedBoard {
   tiles: Record<string, HexTile>
   tileIds: string[]
   hexRadius: number
+  tunnels: [string, string][]
 }
 
 export interface GenerateBoardOptions {
@@ -279,7 +326,9 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       }
     }
 
-    return { tiles, tileIds, hexRadius: radius }
+    const tunnels = addRandomTunnels(rng, tiles, tileIds, TUNNEL_PAIR_COUNT)
+
+    return { tiles, tileIds, hexRadius: radius, tunnels }
   }
 
   throw new Error(`Failed to generate valid ${target}-hex board`)
