@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { hexCorners, hexEdgePortBoardOutside, pointInConvexPolygon } from '../engine/hex'
-import { ROUTE_HEX_RIM } from '../engine/routeGeom'
+import { hexCorners, pointInConvexPolygon } from '../engine/hex'
+import { routeEdgePorts } from '../engine/routeGeom'
 import type { GameState, PlayerId } from '../engine/types'
 
 const WORLD_HEX_RADIUS = 1
@@ -211,8 +211,7 @@ export function GameCanvas({
         const ay = ta.center.y
         const bx = tb.center.x
         const by = tb.center.y
-        const pa = hexEdgePortBoardOutside(ax, ay, C.x, C.y, ROUTE_HEX_RIM)
-        const pb = hexEdgePortBoardOutside(bx, by, C.x, C.y, ROUTE_HEX_RIM)
+        const { pa, pb } = routeEdgePorts(ax, ay, bx, by, C)
         ctx.beginPath()
         ctx.moveTo(pa.x, pa.y)
         ctx.lineTo(pb.x, pb.y)
@@ -236,6 +235,25 @@ export function GameCanvas({
     const p = game.currentPlayer
     const humanPlacing = game.phase === 'PLACEMENT' && !game.players.isBot[p]
 
+    const pickingDefender =
+      game.phase === 'BATTLE' &&
+      game.battle.subPhase === 'CHOOSING_ATTACK' &&
+      !game.players.isBot[p] &&
+      Boolean(sel.selectedAttackerHexId)
+
+    let attackableHexIds: Set<string> | null = null
+    if (pickingDefender) {
+      const aid = sel.selectedAttackerHexId!
+      const atk = game.tiles[aid]
+      attackableHexIds = new Set<string>()
+      if (atk && atk.owner === p && atk.dice >= 2) {
+        for (const nid of atk.neighbors) {
+          const nb = game.tiles[nid]
+          if (nb && nb.owner !== p) attackableHexIds.add(nid)
+        }
+      }
+    }
+
     for (const id of game.tileIds) {
       const t = game.tiles[id]
       const { x, y } = t.center
@@ -244,15 +262,21 @@ export function GameCanvas({
       const isSel = id === sel.selectedAttackerHexId || id === sel.selectedDefenderHexId
       const isYourPlacementHex = humanPlacing && t.owner === p
 
+      const isAttackerPick = id === sel.selectedAttackerHexId
+      const isValidDefender = attackableHexIds?.has(id) ?? false
+      const dimHex = attackableHexIds !== null && !isAttackerPick && !isValidDefender
+
+      const fillAlpha = dimHex ? (isHover ? 0.36 : 0.24) : isHover ? 0.95 : 0.88
+
       ctx.beginPath()
       ctx.moveTo(corners[0].x, corners[0].y)
       for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y)
       ctx.closePath()
       ctx.fillStyle = game.players.colors[t.owner]
-      ctx.globalAlpha = isHover ? 0.95 : 0.88
+      ctx.globalAlpha = fillAlpha
       ctx.fill()
       ctx.globalAlpha = 1
-      ctx.strokeStyle = isSel ? '#e2e8f0' : 'rgba(0,0,0,0.5)'
+      ctx.strokeStyle = isSel ? '#e2e8f0' : dimHex ? 'rgba(0,0,0,0.32)' : 'rgba(0,0,0,0.5)'
       ctx.lineWidth = isSel ? 0.1 : 0.055
       ctx.stroke()
 
@@ -267,10 +291,12 @@ export function GameCanvas({
       }
 
       ctx.fillStyle = diceLabelColor(t.owner)
+      ctx.globalAlpha = dimHex ? (isHover ? 0.5 : 0.34) : 1
       ctx.font = 'bold 0.55px system-ui,sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(t.dice), x, y)
+      ctx.globalAlpha = 1
     }
 
     if (routeBoardC) {
@@ -280,8 +306,7 @@ export function GameCanvas({
         const tb = game.tiles[ib]
         if (!ta || !tb) return
         const st = ROUTE_STYLES[idx % ROUTE_STYLES.length]
-        const pa = hexEdgePortBoardOutside(ta.center.x, ta.center.y, C.x, C.y, ROUTE_HEX_RIM)
-        const pb = hexEdgePortBoardOutside(tb.center.x, tb.center.y, C.x, C.y, ROUTE_HEX_RIM)
+        const { pa, pb } = routeEdgePorts(ta.center.x, ta.center.y, tb.center.x, tb.center.y, C)
         drawRoutePort(ctx, pa.x, pa.y, st)
         drawRoutePort(ctx, pb.x, pb.y, st)
       })

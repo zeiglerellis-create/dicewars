@@ -10,6 +10,22 @@ export interface XY {
 /** Match GameCanvas hex inset (center → vertex). */
 export const ROUTE_HEX_RIM = 0.98
 
+/** Push ports past the hex edge into the gap so they read as off-island, not inside the tile. */
+export const ROUTE_PORT_OUTSET = 0.15
+
+function portPushedOutside(
+  hx: number,
+  hy: number,
+  rimX: number,
+  rimY: number,
+  outset: number,
+): XY {
+  const vx = rimX - hx
+  const vy = rimY - hy
+  const len = Math.hypot(vx, vy) || 1
+  return { x: rimX + (vx / len) * outset, y: rimY + (vy / len) * outset }
+}
+
 export function boardCentroidFromCenters(centers: XY[]): XY {
   let x = 0
   let y = 0
@@ -29,7 +45,10 @@ export function maxRadiusFrom(C: XY, centers: XY[]): number {
   return m || 1
 }
 
-/** Both ports sit on the **outer** board perimeter (away from `boardC`). */
+/**
+ * Ports sit just **outside** each hex (past the outer rim toward the void), on the side facing
+ * away from the board centroid, so each marker clearly belongs to one landmass edge.
+ */
 export function routeEdgePorts(
   ax: number,
   ay: number,
@@ -37,10 +56,13 @@ export function routeEdgePorts(
   by: number,
   boardC: XY,
   hexR: number = ROUTE_HEX_RIM,
+  outset: number = ROUTE_PORT_OUTSET,
 ): { pa: XY; pb: XY } {
+  const ra = hexEdgePortBoardOutside(ax, ay, boardC.x, boardC.y, hexR)
+  const rb = hexEdgePortBoardOutside(bx, by, boardC.x, boardC.y, hexR)
   return {
-    pa: hexEdgePortBoardOutside(ax, ay, boardC.x, boardC.y, hexR),
-    pb: hexEdgePortBoardOutside(bx, by, boardC.x, boardC.y, hexR),
+    pa: portPushedOutside(ax, ay, ra.x, ra.y, outset),
+    pb: portPushedOutside(bx, by, rb.x, rb.y, outset),
   }
 }
 
