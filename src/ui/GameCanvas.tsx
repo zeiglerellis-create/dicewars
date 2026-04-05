@@ -53,6 +53,118 @@ function diceLabelColor(owner: PlayerId): string {
   return owner === 4 || owner === 8 ? '#14161c' : '#f8fafc'
 }
 
+/** Distinct tunnel pairs: stroke + badge fill (labels 1…n). */
+const TUNNEL_STYLES = [
+  { stroke: '#fbbf24', badge: '#fbbf24', glow: 'rgba(251, 191, 36, 0.5)' },
+  { stroke: '#a78bfa', badge: '#a78bfa', glow: 'rgba(167, 139, 250, 0.5)' },
+  { stroke: '#34d399', badge: '#34d399', glow: 'rgba(52, 211, 153, 0.5)' },
+  { stroke: '#f472b6', badge: '#f472b6', glow: 'rgba(244, 114, 182, 0.5)' },
+  { stroke: '#38bdf8', badge: '#38bdf8', glow: 'rgba(56, 189, 248, 0.5)' },
+  { stroke: '#fb923c', badge: '#fb923c', glow: 'rgba(251, 146, 60, 0.5)' },
+] as const
+
+function boardCentroid(game: GameState): { x: number; y: number } {
+  let x = 0
+  let y = 0
+  for (const id of game.tileIds) {
+    x += game.tiles[id].center.x
+    y += game.tiles[id].center.y
+  }
+  const n = game.tileIds.length || 1
+  return { x: x / n, y: y / n }
+}
+
+function maxHexDistanceFrom(game: GameState, cx: number, cy: number): number {
+  let m = 0
+  for (const id of game.tileIds) {
+    const p = game.tiles[id].center
+    m = Math.max(m, Math.hypot(p.x - cx, p.y - cy))
+  }
+  return m || 1
+}
+
+/** Unit vector from centroid toward P (or fallback). */
+function outwardUnit(P: { x: number; y: number }, C: { x: number; y: number }): { x: number; y: number } {
+  const vx = P.x - C.x
+  const vy = P.y - C.y
+  const len = Math.hypot(vx, vy) || 1
+  return { x: vx / len, y: vy / len }
+}
+
+/**
+ * Path: rim of hex A → arc outside the island → rim of hex B. Drawn in world space.
+ */
+function traceOutsideTunnelPath(
+  ctx: CanvasRenderingContext2D,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  C: { x: number; y: number },
+  boardR: number,
+): void {
+  const nA = outwardUnit({ x: ax, y: ay }, C)
+  const nB = outwardUnit({ x: bx, y: by }, C)
+  /** Past hex edge, into “outside” band */
+  const rim = 0.52
+  const push = Math.max(0.95, boardR * 0.28)
+  const ax0 = ax + nA.x * rim
+  const ay0 = ay + nA.y * rim
+  const bx0 = bx + nB.x * rim
+  const by0 = by + nB.y * rim
+  const outA = { x: ax + nA.x * push, y: ay + nA.y * push }
+  const outB = { x: bx + nB.x * push, y: by + nB.y * push }
+
+  const mid = { x: (outA.x + outB.x) / 2, y: (outA.y + outB.y) / 2 }
+  let ux = mid.x - C.x
+  let uy = mid.y - C.y
+  let ulen = Math.hypot(ux, uy)
+  if (ulen < 0.12) {
+    const abx = bx - ax
+    const aby = by - ay
+    ux = -aby
+    uy = abx
+    ulen = Math.hypot(ux, uy) || 1
+  }
+  ux /= ulen
+  uy /= ulen
+  const chord = Math.hypot(outB.x - outA.x, outB.y - outA.y)
+  const bulge = 0.5 * chord + boardR * 0.22 + 0.35
+  const cx = mid.x + ux * bulge
+  const cy = mid.y + uy * bulge
+
+  ctx.beginPath()
+  ctx.moveTo(ax0, ay0)
+  ctx.lineTo(outA.x, outA.y)
+  ctx.quadraticCurveTo(cx, cy, outB.x, outB.y)
+  ctx.lineTo(bx0, by0)
+}
+
+function drawTunnelEndpointBadge(
+  ctx: CanvasRenderingContext2D,
+  px: number,
+  py: number,
+  label: string,
+  style: (typeof TUNNEL_STYLES)[number],
+): void {
+  const r = 0.17
+  ctx.beginPath()
+  ctx.arc(px, py, r, 0, Math.PI * 2)
+  ctx.fillStyle = style.badge
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(15, 17, 23, 0.92)'
+  ctx.lineWidth = 0.055
+  ctx.stroke()
+  ctx.font = 'bold 0.19px system-ui,sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.lineWidth = 0.038
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+  ctx.strokeText(label, px, py)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(label, px, py)
+}
+
 export function GameCanvas({
   game,
   reinforcementPop,
@@ -158,54 +270,6 @@ export function GameCanvas({
 
     ctx.setTransform(scale, 0, 0, scale, ox, oy)
 
-    const tun = game.tunnels
-    if (tun.length > 0) {
-      let tcx = 0
-      let tcy = 0
-      for (const id of game.tileIds) {
-        tcx += game.tiles[id].center.x
-        tcy += game.tiles[id].center.y
-      }
-      tcx /= game.tileIds.length
-      tcy /= game.tileIds.length
-
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      for (const [ia, ib] of tun) {
-        const ta = game.tiles[ia]
-        const tb = game.tiles[ib]
-        if (!ta || !tb) continue
-        const ax = ta.center.x
-        const ay = ta.center.y
-        const bx = tb.center.x
-        const by = tb.center.y
-        const mx = (ax + bx) / 2
-        const my = (ay + by) / 2
-        const dx = bx - ax
-        const dy = by - ay
-        const len = Math.hypot(dx, dy) || 1
-        let px = -dy / len
-        let py = dx / len
-        const oxw = mx - tcx
-        const oyw = my - tcy
-        if (px * oxw + py * oyw < 0) {
-          px = -px
-          py = -py
-        }
-        const bulge = 0.42 * len
-        const c1x = mx + px * bulge
-        const c1y = my + py * bulge
-        ctx.beginPath()
-        ctx.moveTo(ax, ay)
-        ctx.quadraticCurveTo(c1x, c1y, bx, by)
-        ctx.strokeStyle = 'rgba(125, 211, 252, 0.4)'
-        ctx.lineWidth = 0.095
-        ctx.setLineDash([0.15, 0.1])
-        ctx.stroke()
-        ctx.setLineDash([])
-      }
-    }
-
     const sel = game.battle.selection
     const p = game.currentPlayer
     const humanPlacing = game.phase === 'PLACEMENT' && !game.players.isBot[p]
@@ -245,6 +309,42 @@ export function GameCanvas({
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(t.dice), x, y)
+    }
+
+    const tun = game.tunnels
+    if (tun.length > 0) {
+      const C = boardCentroid(game)
+      const boardR = maxHexDistanceFrom(game, C.x, C.y)
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.setLineDash([])
+
+      tun.forEach(([ia, ib], idx) => {
+        const ta = game.tiles[ia]
+        const tb = game.tiles[ib]
+        if (!ta || !tb) return
+        const st = TUNNEL_STYLES[idx % TUNNEL_STYLES.length]
+        const nA = outwardUnit(ta.center, C)
+        const nB = outwardUnit(tb.center, C)
+        const ax = ta.center.x
+        const ay = ta.center.y
+        const bx = tb.center.x
+        const by = tb.center.y
+
+        traceOutsideTunnelPath(ctx, ax, ay, bx, by, C, boardR)
+        ctx.strokeStyle = 'rgba(15, 17, 23, 0.85)'
+        ctx.lineWidth = 0.22
+        ctx.stroke()
+        traceOutsideTunnelPath(ctx, ax, ay, bx, by, C, boardR)
+        ctx.strokeStyle = st.stroke
+        ctx.lineWidth = 0.13
+        ctx.stroke()
+
+        const label = String(idx + 1)
+        const badgeDist = 0.4
+        drawTunnelEndpointBadge(ctx, ax + nA.x * badgeDist, ay + nA.y * badgeDist, label, st)
+        drawTunnelEndpointBadge(ctx, bx + nB.x * badgeDist, by + nB.y * badgeDist, label, st)
+      })
     }
 
     const pop = plusOneAnimRef.current

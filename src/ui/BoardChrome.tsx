@@ -115,7 +115,7 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Four tunnels link random edge hexes (dashed arcs). ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Tunnels: matching numbers & colors link two edge hexes around the outside. ↻ new map; Start when ready.',
       }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 
