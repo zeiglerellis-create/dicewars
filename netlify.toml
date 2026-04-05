@@ -1,0 +1,15 @@
+# Netlify build for this Vite + React app.
+# https://docs.netlify.com/configure-builds/file-based-configuration/
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA fallback: real files in dist (e.g. /mobile.html, /assets/*) are still served first.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

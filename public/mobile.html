@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0c0e12" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>Dice Wars — Mobile</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100%;
+        min-height: 100dvh;
+        font-family:
+          system-ui,
+          -apple-system,
+          'SF Pro Text',
+          'Segoe UI',
+          sans-serif;
+        font-size: 1rem;
+        line-height: 1.45;
+        color: #e2e8f0;
+        background: #0c0e12;
+        padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0)
+          env(safe-area-inset-left, 0);
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .wrap {
+        max-width: 28rem;
+        margin: 0 auto;
+        padding: 1.25rem 1.15rem 2rem;
+      }
+
+      header {
+        padding-top: 0.25rem;
+        margin-bottom: 1.5rem;
+      }
+
+      h1 {
+        margin: 0 0 0.35rem;
+        font-size: 1.65rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #f8fafc;
+      }
+
+      .sub {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #94a3b8;
+      }
+
+      .panel {
+        background: linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(20, 24, 33, 0.92) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 1.1rem 1.05rem;
+        margin-bottom: 1.25rem;
+      }
+
+      .panel h2 {
+        margin: 0 0 0.65rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #cbd5e1;
+      }
+
+      .panel p {
+        margin: 0 0 0.65rem;
+        font-size: 0.9rem;
+        color: #cbd5e1;
+      }
+
+      .panel p:last-child {
+        margin-bottom: 0;
+      }
+
+      .cta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+      }
+
+      a.btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 48px;
+        padding: 0.85rem 1.1rem;
+        border-radius: 12px;
+        font-size: 1.02rem;
+        font-weight: 700;
+        text-decoration: none;
+        text-align: center;
+        border: 1px solid transparent;
+        touch-action: manipulation;
+      }
+
+      a.btn-primary {
+        background: linear-gradient(180deg, #4f46e5 0%, #4338ca 100%);
+        color: #fff;
+        border-color: rgba(165, 180, 252, 0.45);
+        box-shadow: 0 4px 20px rgba(67, 56, 202, 0.35);
+      }
+
+      a.btn-primary:active {
+        transform: scale(0.98);
+        opacity: 0.95;
+      }
+
+      ul.tips {
+        margin: 0;
+        padding-left: 1.1rem;
+        font-size: 0.88rem;
+        color: #94a3b8;
+        line-height: 1.5;
+      }
+
+      ul.tips li {
+        margin-bottom: 0.4rem;
+      }
+
+      footer {
+        margin-top: 1.75rem;
+        font-size: 0.75rem;
+        color: #64748b;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Dice Wars</h1>
+        <p class="sub">Hex battle game — tuned for your phone</p>
+      </header>
+
+      <div class="cta">
+        <a class="btn btn-primary" href="/">Open full game</a>
+      </div>
+
+      <div class="panel" style="margin-top: 1.35rem">
+        <h2>On iPhone</h2>
+        <ul class="tips">
+          <li>Use Safari for the best full-screen experience.</li>
+          <li>Rotate to landscape if the board feels tight.</li>
+          <li>
+            Share → <strong>Add to Home Screen</strong> for an app-like shortcut (optional).
+          </li>
+          <li>Pinch zoom still works if you need it (up to 5×).</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>Controls</h2>
+        <p>
+          <strong>Setup:</strong> pick players, size, and options on the board, then Start. <strong>Play:</strong> tap
+          hexes to place dice or attack. <strong>End turn</strong> sits on the board during battle.
+        </p>
+      </div>
+
+      <footer>Dice Wars · mobile entry</footer>
+    </div>
+  </body>
+</html>

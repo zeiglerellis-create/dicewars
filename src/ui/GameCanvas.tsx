@@ -1,0 +1,261 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { hexCorners, pointInConvexPolygon } from '../engine/hex'
+import type { GameState, PlayerId } from '../engine/types'
+
+const WORLD_HEX_RADIUS = 1
+
+/** Pointy-top hex: horizontal extent from center to flat edge = √3/2·R */
+const HEX_EXTENT_X = WORLD_HEX_RADIUS * (Math.sqrt(3) / 2)
+const HEX_EXTENT_Y = WORLD_HEX_RADIUS
+
+export interface GameCanvasProps {
+  game: GameState
+  /** Triggers a short +1 float when each reinforcement die lands */
+  reinforcementPop?: { hexId: string; seq: number }
+  onHexClick: (hexId: string) => void
+  hoveredHexId: string | null
+  onHoverChange: (hexId: string | null) => void
+}
+
+function boundsOf(game: GameState): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minCx = Infinity
+  let maxCx = -Infinity
+  let minCy = Infinity
+  let maxCy = -Infinity
+  for (const id of game.tileIds) {
+    const { x, y } = game.tiles[id].center
+    minCx = Math.min(minCx, x)
+    maxCx = Math.max(maxCx, x)
+    minCy = Math.min(minCy, y)
+    maxCy = Math.max(maxCy, y)
+  }
+  const margin = 0.12
+  return {
+    minX: minCx - HEX_EXTENT_X - margin,
+    maxX: maxCx + HEX_EXTENT_X + margin,
+    minY: minCy - HEX_EXTENT_Y - margin,
+    maxY: maxCy + HEX_EXTENT_Y + margin,
+  }
+}
+
+function pickHex(game: GameState, wx: number, wy: number): string | null {
+  let best: string | null = null
+  for (const id of game.tileIds) {
+    const c = game.tiles[id].center
+    const corners = hexCorners(c.x, c.y, WORLD_HEX_RADIUS * 0.98)
+    if (pointInConvexPolygon(wx, wy, corners)) best = id
+  }
+  return best
+}
+
+/** Light swatches (yellow, pale gray in default palette) need dark dice numerals. */
+function diceLabelColor(owner: PlayerId): string {
+  return owner === 4 || owner === 8 ? '#14161c' : '#f8fafc'
+}
+
+export function GameCanvas({
+  game,
+  reinforcementPop,
+  onHexClick,
+  hoveredHexId,
+  onHoverChange,
+}: GameCanvasProps) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [transform, setTransform] = useState({ scale: 1, ox: 0, oy: 0 })
+  const [popFrame, setPopFrame] = useState(0)
+  const plusOneAnimRef = useRef<{ hexId: string; start: number } | null>(null)
+
+  useEffect(() => {
+    if (!reinforcementPop) return
+    plusOneAnimRef.current = {
+      hexId: reinforcementPop.hexId,
+      start: performance.now(),
+    }
+    let raf: number
+    const loop = () => {
+      setPopFrame((f) => f + 1)
+      const a = plusOneAnimRef.current
+      if (!a) return
+      if (performance.now() - a.start >= 400) {
+        plusOneAnimRef.current = null
+        setPopFrame((f) => f + 1)
+        return
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restart only when a new +1 tick fires (seq).
+  }, [reinforcementPop?.seq, reinforcementPop?.hexId])
+
+  const resize = useCallback(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const rect = canvas.getBoundingClientRect()
+    const cssW = Math.max(1, rect.width)
+    const cssH = Math.max(1, rect.height)
+    canvas.width = Math.floor(cssW * dpr)
+    canvas.height = Math.floor(cssH * dpr)
+
+    const b = boundsOf(game)
+    const bw = b.maxX - b.minX
+    const bh = b.maxY - b.minY
+    const pad = 18 * dpr
+    const fitScale =
+      Math.min((canvas.width - 2 * pad) / bw, (canvas.height - 2 * pad) / bh) * 0.98
+    const geomCX = (b.minX + b.maxX) / 2
+    const geomCY = (b.minY + b.maxY) / 2
+
+    const ox = canvas.width / 2 - fitScale * geomCX
+    const oy = canvas.height / 2 - fitScale * geomCY
+
+    setTransform({ scale: fitScale, ox, oy })
+  }, [game])
+
+  useEffect(() => {
+    resize()
+    window.addEventListener('resize', resize)
+    const canvas = ref.current
+    const ro = new ResizeObserver(() => resize())
+    if (canvas) ro.observe(canvas)
+    return () => {
+      window.removeEventListener('resize', resize)
+      ro.disconnect()
+    }
+  }, [resize])
+
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const { scale, ox, oy } = transform
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#0f1117'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    ctx.setTransform(scale, 0, 0, scale, ox, oy)
+
+    const sel = game.battle.selection
+    const p = game.currentPlayer
+    const humanPlacing = game.phase === 'PLACEMENT' && !game.players.isBot[p]
+
+    for (const id of game.tileIds) {
+      const t = game.tiles[id]
+      const { x, y } = t.center
+      const corners = hexCorners(x, y, WORLD_HEX_RADIUS)
+      const isHover = id === hoveredHexId
+      const isSel = id === sel.selectedAttackerHexId || id === sel.selectedDefenderHexId
+      const isYourPlacementHex = humanPlacing && t.owner === p
+
+      ctx.beginPath()
+      ctx.moveTo(corners[0].x, corners[0].y)
+      for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y)
+      ctx.closePath()
+      ctx.fillStyle = game.players.colors[t.owner]
+      ctx.globalAlpha = isHover ? 0.95 : 0.88
+      ctx.fill()
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = isSel ? '#e2e8f0' : 'rgba(0,0,0,0.5)'
+      ctx.lineWidth = isSel ? 0.1 : 0.055
+      ctx.stroke()
+
+      if (isYourPlacementHex) {
+        ctx.beginPath()
+        ctx.moveTo(corners[0].x, corners[0].y)
+        for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y)
+        ctx.closePath()
+        ctx.strokeStyle = isHover ? '#f8fafc' : 'rgba(226, 232, 240, 0.5)'
+        ctx.lineWidth = isHover ? 0.1 : 0.075
+        ctx.stroke()
+      }
+
+      ctx.fillStyle = diceLabelColor(t.owner)
+      ctx.font = 'bold 0.55px system-ui,sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(t.dice), x, y)
+    }
+
+    const pop = plusOneAnimRef.current
+    if (pop) {
+      const tile = game.tiles[pop.hexId]
+      if (tile) {
+        const elapsed = performance.now() - pop.start
+        const t = Math.min(1, elapsed / 380)
+        const lift = 0.1 + 0.38 * (1 - (1 - t) * (1 - t))
+        const alpha = Math.max(0, 1 - t * t * t)
+        const { x, y } = tile.center
+        ctx.font = 'bold 0.48px system-ui,sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'bottom'
+        ctx.lineWidth = 0.04
+        ctx.strokeStyle = `rgba(15,17,23,${alpha * 0.85})`
+        ctx.fillStyle = `rgba(248,250,252,${alpha})`
+        const py = y - lift
+        ctx.strokeText('+1', x, py)
+        ctx.fillText('+1', x, py)
+      }
+    }
+  }, [game, hoveredHexId, transform, popFrame])
+
+  const toWorld = useCallback(
+    (clientX: number, clientY: number): { wx: number; wy: number } | null => {
+      const canvas = ref.current
+      if (!canvas) return null
+      const r = canvas.getBoundingClientRect()
+      const px = ((clientX - r.left) / r.width) * canvas.width
+      const py = ((clientY - r.top) / r.height) * canvas.height
+      const wx = (px - transform.ox) / transform.scale
+      const wy = (py - transform.oy) / transform.scale
+      return { wx, wy }
+    },
+    [transform],
+  )
+
+  const onMove = (e: React.MouseEvent) => {
+    const w = toWorld(e.clientX, e.clientY)
+    if (!w) return
+    const id = pickHex(game, w.wx, w.wy)
+    onHoverChange(id)
+  }
+
+  const onLeave = () => {
+    onHoverChange(null)
+  }
+
+  const onClick = (e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    const w = toWorld(e.clientX, e.clientY)
+    if (!w) return
+    const id = pickHex(game, w.wx, w.wy)
+    if (id) onHexClick(id)
+  }
+
+  const selectablePlacement = (id: string): boolean => {
+    if (game.phase !== 'PLACEMENT') return false
+    return game.tiles[id].owner === game.currentPlayer
+  }
+
+  const cursor =
+    game.phase === 'PLACEMENT' && hoveredHexId && selectablePlacement(hoveredHexId)
+      ? 'pointer'
+      : game.phase === 'BATTLE' && hoveredHexId
+        ? 'pointer'
+        : 'default'
+
+  return (
+    <canvas
+      ref={ref}
+      className="game-canvas"
+      style={{ width: '100%', height: '100%', cursor, display: 'block', touchAction: 'manipulation' }}
+      onMouseMove={onMove}
+      onMouseLeave={onLeave}
+      onClick={onClick}
+      role="img"
+      aria-label="Dice Wars board"
+    />
+  )
+}
