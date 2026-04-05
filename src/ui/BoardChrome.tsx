@@ -8,10 +8,14 @@ export interface BoardChromeProps {
   game: GameState
   onRandomizeBoard: () => void
   onStartGame: () => void
-  onEndTurn: () => void
-  onSkipAiTurns: () => void
   onSetPlayerCount: (n: number) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
+}
+
+export interface BoardStatusStripProps {
+  game: GameState
+  onEndTurn: () => void
+  onSkipAiTurns: () => void
 }
 
 function reinforcementPrompt(game: GameState): { title: string; detail: string } | null {
@@ -90,15 +94,8 @@ function IconSkipAi() {
   )
 }
 
-export function BoardChrome({
-  game,
-  onRandomizeBoard,
-  onStartGame,
-  onEndTurn,
-  onSkipAiTurns,
-  onSetPlayerCount,
-  onSetBoardHexPreset,
-}: BoardChromeProps) {
+/** Fixed-height strip below the board: directions + turn icon actions. */
+export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatusStripProps) {
   const p = game.currentPlayer
   const canEndTurn =
     game.phase === 'BATTLE' &&
@@ -123,43 +120,57 @@ export function BoardChrome({
 
   const showPromptActions = !pregame && (showSkipAi || canEndTurn)
 
+  if (!prompt) return null
+
+  return (
+    <div className="dw-status-strip">
+      <div className={'dw-board-prompt-bar' + (showPromptActions ? ' dw-board-prompt-bar--with-actions' : '')}>
+        <div className="dw-board-prompt-text" aria-live="polite">
+          <p className="dw-board-prompt-title">{prompt.title}</p>
+          <p className="dw-board-prompt-detail">{prompt.detail}</p>
+        </div>
+        {showPromptActions && (
+          <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
+            {showSkipAi && (
+              <button
+                type="button"
+                className="dw-board-icon-btn dw-board-icon-btn--secondary"
+                onClick={onSkipAiTurns}
+                title="Skip AI — jump to your turn"
+                aria-label="Skip AI — jump to your turn"
+              >
+                <IconSkipAi />
+              </button>
+            )}
+            {canEndTurn && (
+              <button
+                type="button"
+                className="dw-board-icon-btn dw-board-icon-btn--primary"
+                onClick={onEndTurn}
+                title="End turn"
+                aria-label="End turn"
+              >
+                <IconEndTurn />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function BoardChrome({
+  game,
+  onRandomizeBoard,
+  onStartGame,
+  onSetPlayerCount,
+  onSetBoardHexPreset,
+}: BoardChromeProps) {
+  const pregame = game.phase === 'PREGAME'
+
   return (
     <>
-      {prompt && (
-        <div className={'dw-board-prompt-bar' + (showPromptActions ? ' dw-board-prompt-bar--with-actions' : '')}>
-          <div className="dw-board-prompt-text" aria-live="polite">
-            <p className="dw-board-prompt-title">{prompt.title}</p>
-            <p className="dw-board-prompt-detail">{prompt.detail}</p>
-          </div>
-          {showPromptActions && (
-            <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
-              {showSkipAi && (
-                <button
-                  type="button"
-                  className="dw-board-icon-btn dw-board-icon-btn--secondary"
-                  onClick={onSkipAiTurns}
-                  title="Skip AI — jump to your turn"
-                  aria-label="Skip AI — jump to your turn"
-                >
-                  <IconSkipAi />
-                </button>
-              )}
-              {canEndTurn && (
-                <button
-                  type="button"
-                  className="dw-board-icon-btn dw-board-icon-btn--primary"
-                  onClick={onEndTurn}
-                  title="End turn"
-                  aria-label="End turn"
-                >
-                  <IconEndTurn />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {pregame && (
         <div className="dw-board-float dw-board-float--setup">
           <div className="dw-setup-panel">

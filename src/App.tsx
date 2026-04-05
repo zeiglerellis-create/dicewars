@@ -18,7 +18,7 @@ import {
   setPlayerCountPregame,
   tickReinforcementAnimation,
 } from './engine/rules'
-import { BoardChrome } from './ui/BoardChrome'
+import { BoardChrome, BoardStatusStrip } from './ui/BoardChrome'
 import { GameCanvas } from './ui/GameCanvas'
 import { HUD } from './ui/HUD'
 import './App.css'
@@ -202,23 +202,24 @@ export default function App() {
     <div className="dice-wars-app">
       <HUD game={game} onNewGameConfirmed={onNewGameConfirmed} errorMessage={error} />
 
-      <div className="dw-board-wrap">
-        <GameCanvas
-          game={game}
-          reinforcementPop={game.reinforcementPop}
-          onHexClick={onHexClick}
-          hoveredHexId={hoveredHexId}
-          onHoverChange={setHoveredHexId}
-        />
-        <BoardChrome
-          game={game}
-          onRandomizeBoard={onRandomizeBoard}
-          onStartGame={onStartGame}
-          onEndTurn={onEndTurn}
-          onSkipAiTurns={onSkipAiTurns}
-          onSetPlayerCount={onSetPlayerCount}
-          onSetBoardHexPreset={onSetBoardHexPreset}
-        />
+      <div className="dw-board-stack">
+        <div className="dw-board-wrap">
+          <GameCanvas
+            game={game}
+            reinforcementPop={game.reinforcementPop}
+            onHexClick={onHexClick}
+            hoveredHexId={hoveredHexId}
+            onHoverChange={setHoveredHexId}
+          />
+          <BoardChrome
+            game={game}
+            onRandomizeBoard={onRandomizeBoard}
+            onStartGame={onStartGame}
+            onSetPlayerCount={onSetPlayerCount}
+            onSetBoardHexPreset={onSetBoardHexPreset}
+          />
+        </div>
+        <BoardStatusStrip game={game} onEndTurn={onEndTurn} onSkipAiTurns={onSkipAiTurns} />
       </div>
 
       {game.phase === 'GAME_OVER' && game.winner !== undefined && (

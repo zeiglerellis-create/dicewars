@@ -1,8 +1,8 @@
 /**
- * Fixed board height; toolbar at top; board full remaining width.
+ * Toolbar on top; board flexes above a fixed-height status strip.
  */
 .dice-wars-app {
-  --board-fixed-h: min(600px, calc(100dvh - 12.5rem));
+  --dw-status-bar-h: 4.65rem;
 
   width: 100%;
   max-width: 100%;
@@ -378,15 +378,25 @@
   margin-left: -0.9rem;
 }
 
-/* ——— Full-width board ——— */
+/* Board column: canvas (flex) + fixed status strip below (outside board frame) */
+.dw-board-stack {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+}
+
+/* ——— Hex canvas area (bordered) ——— */
 .dw-board-wrap {
   position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
   max-width: 100%;
-  height: var(--board-fixed-h);
-  min-height: 240px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   border-radius: 10px;
@@ -395,31 +405,51 @@
   background: #0f1117;
 }
 
-/* Bottom prompt + turn actions (icons bottom-right) */
+/* Fixed-height strip below board: directions + actions, same row height */
+.dw-status-strip {
+  flex-shrink: 0;
+  height: var(--dw-status-bar-h);
+  min-height: var(--dw-status-bar-h);
+  max-height: var(--dw-status-bar-h);
+  box-sizing: border-box;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0f1117;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  align-items: stretch;
+}
+
 .dw-board-prompt-bar {
-  position: absolute;
-  left: 0.45rem;
-  right: 0.45rem;
-  bottom: 0.5rem;
-  z-index: 5;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: row;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.45rem;
-  pointer-events: none;
 }
 
 .dw-board-prompt-text {
   flex: 1;
   min-width: 0;
-  max-width: min(100%, 26rem);
-  padding: 0.42rem 0.72rem 0.48rem;
+  max-width: min(100%, 28rem);
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 0.65rem;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
   background: rgba(15, 17, 23, 0.38);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
@@ -432,17 +462,27 @@
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-h);
-  line-height: 1.25;
+  line-height: 1.2;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .dw-board-prompt-detail {
-  margin: 0.12rem 0 0;
+  margin: 0.08rem 0 0;
   font-size: 0.64rem;
   color: #e2e8f0;
-  line-height: 1.38;
+  line-height: 1.32;
   opacity: 0.95;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .dw-board-float {
@@ -574,20 +614,24 @@
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: stretch;
+  align-self: stretch;
   gap: 0.32rem;
   flex-shrink: 0;
-  pointer-events: auto;
+  height: 100%;
 }
 
 .dw-board-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.55rem;
-  height: 2.55rem;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
+  width: 2.85rem;
+  min-width: 2.85rem;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(15, 17, 23, 0.55);
   color: #f1f5f9;
@@ -630,8 +674,7 @@
 @media (max-width: 720px) {
   .dice-wars-app {
     padding: 0.22rem 0.32rem 0.32rem;
-    /* More vertical space for the hex canvas */
-    --board-fixed-h: min(82dvh, calc(100dvh - 5.25rem));
+    --dw-status-bar-h: 4.35rem;
   }
 
   .game-toolbar {
@@ -727,7 +770,7 @@
   }
 
   .dw-board-wrap {
-    min-height: 200px;
+    min-height: 180px;
   }
 
   .dw-board-prompt-title {
@@ -739,8 +782,8 @@
   }
 
   .dw-board-icon-btn {
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.65rem;
+    min-width: 2.65rem;
   }
 
   .btn-board {
