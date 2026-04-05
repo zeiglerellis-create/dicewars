@@ -32,7 +32,7 @@ function placementPrompt(game: GameState): { title: string; detail: string } | n
   if (game.players.isBot[p]) {
     return {
       title: 'AI is placing dice…',
-      detail: 'Watch the board or tap Skip AI on the board (next to End turn when shown).',
+      detail: 'Watch the board or tap the skip (fast-forward) icon by the directions.',
     }
   }
   return {
@@ -47,13 +47,13 @@ function battlePrompt(game: GameState): { title: string; detail: string } | null
   if (game.players.isBot[p]) {
     return {
       title: 'AI is taking its battle turn…',
-      detail: 'Tap Skip AI at the top of the board (same row as End turn on your turns).',
+      detail: 'Tap the skip (fast-forward) icon by the directions, or wait for the AI.',
     }
   }
   const sel = game.battle.selection.selectedAttackerHexId
   return {
     title: sel ? 'Choose an adjacent enemy hex to attack' : 'Choose one of your hexes to attack from',
-    detail: 'Need at least 2 dice on the attacker. When finished attacking, tap End turn.',
+    detail: 'Need at least 2 dice on the attacker. When finished, tap the end-turn (arrow) icon by the directions.',
   }
 }
 
@@ -61,6 +61,33 @@ const SIZE_LABELS: Record<BoardHexPreset, string> = {
   20: 'Small',
   40: 'Medium',
   60: 'Large',
+}
+
+function IconEndTurn() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 12h11" />
+      <path d="M13 7l6 5-6 5" />
+    </svg>
+  )
+}
+
+function IconSkipAi() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M5 6v12l9-6-9-6zm9 0v12l8-6-8-6z" />
+    </svg>
+  )
 }
 
 export function BoardChrome({
@@ -94,12 +121,42 @@ export function BoardChrome({
       }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 
+  const showPromptActions = !pregame && (showSkipAi || canEndTurn)
+
   return (
     <>
       {prompt && (
-        <div className="dw-board-prompt" aria-live="polite">
-          <p className="dw-board-prompt-title">{prompt.title}</p>
-          <p className="dw-board-prompt-detail">{prompt.detail}</p>
+        <div className={'dw-board-prompt-bar' + (showPromptActions ? ' dw-board-prompt-bar--with-actions' : '')}>
+          <div className="dw-board-prompt-text" aria-live="polite">
+            <p className="dw-board-prompt-title">{prompt.title}</p>
+            <p className="dw-board-prompt-detail">{prompt.detail}</p>
+          </div>
+          {showPromptActions && (
+            <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
+              {showSkipAi && (
+                <button
+                  type="button"
+                  className="dw-board-icon-btn dw-board-icon-btn--secondary"
+                  onClick={onSkipAiTurns}
+                  title="Skip AI — jump to your turn"
+                  aria-label="Skip AI — jump to your turn"
+                >
+                  <IconSkipAi />
+                </button>
+              )}
+              {canEndTurn && (
+                <button
+                  type="button"
+                  className="dw-board-icon-btn dw-board-icon-btn--primary"
+                  onClick={onEndTurn}
+                  title="End turn"
+                  aria-label="End turn"
+                >
+                  <IconEndTurn />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -181,27 +238,6 @@ export function BoardChrome({
         </div>
       )}
 
-      {(canEndTurn || showSkipAi) && (
-        <div className="dw-board-float dw-board-float--endturn">
-          <div className="dw-board-actions-row">
-            {showSkipAi && (
-              <button
-                type="button"
-                className="btn btn-board dw-board-action--secondary"
-                onClick={onSkipAiTurns}
-                title="Finish AI moves and return to your turn"
-              >
-                Skip AI
-              </button>
-            )}
-            {canEndTurn && (
-              <button type="button" className="btn btn-board primary" onClick={onEndTurn}>
-                End turn
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </>
   )
 }

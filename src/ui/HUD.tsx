@@ -4,23 +4,23 @@ import { playerTerritoryStats } from '../engine/scoring'
 
 export interface HUDProps {
   game: GameState
-  /** Called only after the two-step confirmation completes. */
+  /** Called when the user confirms starting a new game. */
   onNewGameConfirmed: () => void
   errorMessage: string | null
 }
 
 export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
-  const [newGameStep, setNewGameStep] = useState<0 | 1 | 2>(0)
+  const [newGameOpen, setNewGameOpen] = useState(false)
   const newGameTitleId = useId()
 
   useEffect(() => {
-    if (newGameStep === 0) return
+    if (!newGameOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setNewGameStep(0)
+      if (e.key === 'Escape') setNewGameOpen(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [newGameStep])
+  }, [newGameOpen])
 
   const showCurrentPlayerOutline =
     game.phase !== 'PREGAME' && game.phase !== 'GAME_OVER'
@@ -42,7 +42,7 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
           <button
             type="button"
             className="btn btn-sm toolbar-new-game"
-            onClick={() => setNewGameStep(1)}
+            onClick={() => setNewGameOpen(true)}
           >
             New game
           </button>
@@ -143,11 +143,11 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
         </div>
       </div>
 
-      {newGameStep > 0 && (
+      {newGameOpen && (
         <div
           className="modal-backdrop"
           role="presentation"
-          onClick={() => setNewGameStep(0)}
+          onClick={() => setNewGameOpen(false)}
         >
           <div
             className="modal modal--compact"
@@ -156,44 +156,26 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
             aria-labelledby={newGameTitleId}
             onClick={(e) => e.stopPropagation()}
           >
-            {newGameStep === 1 && (
-              <>
-                <h2 id={newGameTitleId}>Start a new game?</h2>
-                <p>Your current match will be abandoned. This is the first of two confirmations.</p>
-                <div className="modal-actions modal-actions--row">
-                  <button type="button" className="btn" onClick={() => setNewGameStep(0)}>
-                    Cancel
-                  </button>
-                  <button type="button" className="btn primary" onClick={() => setNewGameStep(2)}>
-                    Continue
-                  </button>
-                </div>
-              </>
-            )}
-            {newGameStep === 2 && (
-              <>
-                <h2 id={newGameTitleId}>Confirm new game</h2>
-                <p>
-                  <strong>Last step:</strong> discard this game and generate a fresh board with the same player count
-                  and board size?
-                </p>
-                <div className="modal-actions modal-actions--row">
-                  <button type="button" className="btn" onClick={() => setNewGameStep(0)}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => {
-                      onNewGameConfirmed()
-                      setNewGameStep(0)
-                    }}
-                  >
-                    Yes — new game
-                  </button>
-                </div>
-              </>
-            )}
+            <h2 id={newGameTitleId}>Start a new game?</h2>
+            <p>
+              Your current match will be abandoned and replaced with a fresh board using the same player count and board
+              size.
+            </p>
+            <div className="modal-actions modal-actions--row">
+              <button type="button" className="btn" onClick={() => setNewGameOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  onNewGameConfirmed()
+                  setNewGameOpen(false)
+                }}
+              >
+                New game
+              </button>
+            </div>
           </div>
         </div>
       )}

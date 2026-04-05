@@ -395,22 +395,36 @@
   background: #0f1117;
 }
 
-/* Floating overlays on the board (do not resize the canvas) */
-.dw-board-prompt {
+/* Bottom prompt + turn actions (icons bottom-right) */
+.dw-board-prompt-bar {
   position: absolute;
-  left: 50%;
-  bottom: 0.55rem;
-  transform: translateX(-50%);
-  width: min(94%, 440px);
-  padding: 0.42rem 0.72rem 0.48rem;
-  pointer-events: none;
-  text-align: center;
+  left: 0.45rem;
+  right: 0.45rem;
+  bottom: 0.5rem;
   z-index: 5;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.dw-board-prompt-text {
+  flex: 1;
+  min-width: 0;
+  max-width: min(100%, 26rem);
+  padding: 0.42rem 0.72rem 0.48rem;
+  text-align: left;
   background: rgba(15, 17, 23, 0.38);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dw-board-prompt-bar:not(.dw-board-prompt-bar--with-actions) .dw-board-prompt-text {
+  max-width: none;
 }
 
 .dw-board-prompt-title {
@@ -556,24 +570,60 @@
   min-width: 0;
 }
 
-.dw-board-float--endturn {
-  top: 0.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.dw-board-actions-row {
+.dw-board-prompt-actions {
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
-  gap: 0.42rem;
+  gap: 0.32rem;
+  flex-shrink: 0;
+  pointer-events: auto;
 }
 
-.btn-board.dw-board-action--secondary {
+.dw-board-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(15, 17, 23, 0.55);
-  border-color: rgba(255, 255, 255, 0.28);
+  color: #f1f5f9;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.dw-board-icon-btn:hover {
+  background: rgba(30, 36, 52, 0.75);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.dw-board-icon-btn:active {
+  transform: scale(0.96);
+}
+
+.dw-board-icon-btn--primary {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(37, 99, 235, 0.42);
+  color: #f8fafc;
+}
+
+.dw-board-icon-btn--primary:hover {
+  background: rgba(59, 130, 246, 0.52);
+  border-color: rgba(147, 197, 253, 0.65);
+}
+
+.dw-board-icon-btn--secondary {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(15, 17, 23, 0.65);
 }
 
 /* ——— Mobile: taller board, compact player strip, key stats only ——— */
@@ -686,6 +736,11 @@
 
   .dw-board-prompt-detail {
     font-size: 0.58rem;
+  }
+
+  .dw-board-icon-btn {
+    width: 2.35rem;
+    height: 2.35rem;
   }
 
   .btn-board {
