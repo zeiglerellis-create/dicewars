@@ -61,9 +61,15 @@ export function GameCanvas({
   onHoverChange,
 }: GameCanvasProps) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const gameRef = useRef(game)
+  gameRef.current = game
+
   const [transform, setTransform] = useState({ scale: 1, ox: 0, oy: 0 })
   const [popFrame, setPopFrame] = useState(0)
   const plusOneAnimRef = useRef<{ hexId: string; start: number } | null>(null)
+
+  /** Only changes when hex layout changes — avoids resetting canvas size every game tick (reinforcement blink). */
+  const boardTopologyKey = `${game.boardHexCount}|${game.tileIds.join(',')}`
 
   useEffect(() => {
     if (!reinforcementPop) return
@@ -95,10 +101,14 @@ export function GameCanvas({
     const rect = canvas.getBoundingClientRect()
     const cssW = Math.max(1, rect.width)
     const cssH = Math.max(1, rect.height)
-    canvas.width = Math.floor(cssW * dpr)
-    canvas.height = Math.floor(cssH * dpr)
+    const nextW = Math.floor(cssW * dpr)
+    const nextH = Math.floor(cssH * dpr)
+    if (canvas.width !== nextW || canvas.height !== nextH) {
+      canvas.width = nextW
+      canvas.height = nextH
+    }
 
-    const b = boundsOf(game)
+    const b = boundsOf(gameRef.current)
     const bw = b.maxX - b.minX
     const bh = b.maxY - b.minY
     const pad = 18 * dpr
@@ -110,8 +120,18 @@ export function GameCanvas({
     const ox = canvas.width / 2 - fitScale * geomCX
     const oy = canvas.height / 2 - fitScale * geomCY
 
-    setTransform({ scale: fitScale, ox, oy })
-  }, [game])
+    setTransform((prev) => {
+      if (
+        Math.abs(prev.scale - fitScale) < 1e-5 &&
+        Math.abs(prev.ox - ox) < 0.5 &&
+        Math.abs(prev.oy - oy) < 0.5
+      ) {
+        return prev
+      }
+      return { scale: fitScale, ox, oy }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boardTopologyKey gates callback when map changes; bounds read from gameRef
+  }, [boardTopologyKey])
 
   useEffect(() => {
     resize()

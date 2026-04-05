@@ -58,12 +58,42 @@ describe('boardGen', () => {
     let minAr = Infinity
     for (let i = 0; i < trials; i++) {
       const rng = createRng(12_000 + i)
-      const { tiles, tileIds } = generateBoard(rng, 40)
+      const { tiles, tileIds } = generateBoard(rng, 40, { growthBias: 'landscape' })
       const ar = centerAspect(tiles, tileIds)
       sum += ar
       minAr = Math.min(minAr, ar)
     }
     expect(minAr).toBeGreaterThanOrEqual(1)
     expect(sum / trials).toBeGreaterThan(1.06)
+  })
+
+  it('skews toward portrait bounds when growthBias is portrait', () => {
+    function centerAspect(tiles: Record<string, { center: { x: number; y: number } }>, tileIds: string[]): number {
+      let minX = Infinity
+      let maxX = -Infinity
+      let minY = Infinity
+      let maxY = -Infinity
+      for (const id of tileIds) {
+        const { x, y } = tiles[id].center
+        minX = Math.min(minX, x)
+        maxX = Math.max(maxX, x)
+        minY = Math.min(minY, y)
+        maxY = Math.max(maxY, y)
+      }
+      return (maxX - minX + 1e-9) / (maxY - minY + 1e-9)
+    }
+
+    const trials = 48
+    let sum = 0
+    let maxAr = 0
+    for (let i = 0; i < trials; i++) {
+      const rng = createRng(88_000 + i)
+      const { tiles, tileIds } = generateBoard(rng, 40, { growthBias: 'portrait' })
+      const ar = centerAspect(tiles, tileIds)
+      sum += ar
+      maxAr = Math.max(maxAr, ar)
+    }
+    expect(maxAr).toBeLessThanOrEqual(1.02)
+    expect(sum / trials).toBeLessThan(0.94)
   })
 })

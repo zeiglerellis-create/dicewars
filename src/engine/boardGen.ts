@@ -3,12 +3,29 @@ import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN, type HexCoord, type HexTile, type P
 import type { Rng } from './rng'
 import { nextFloat, shuffleInPlace } from './rng'
 
-/** Bias growth steps toward wider pixel layouts (browser-friendly landscape boards). */
-const LANDSCAPE_GROWTH_BIAS_EXP = 2.4
+/** Bias growth steps toward wider (landscape) or taller (portrait) pixel bounds. */
+const GROWTH_BIAS_EXP = 2.4
 
-/** While generating, prefer width ≥ height; relax in the last few attempts so we always finish. */
+/** Landscape: prefer width ≥ height in pixel space. */
 const MIN_BOARD_PIXEL_ASPECT = 1
+/** Portrait (narrow viewports): prefer height ≥ width; allow slight tolerance. */
+const MAX_BOARD_PIXEL_ASPECT_PORTRAIT = 1.02
+
 const ASPECT_RELAX_LAST_ATTEMPTS = 28
+
+export type BoardGrowthBias = 'landscape' | 'portrait'
+
+/** Used when generating boards so mobile portrait gets taller blobs that fill vertical space. */
+export function defaultBoardGrowthBias(): BoardGrowthBias {
+  if (typeof globalThis !== 'undefined' && typeof globalThis.matchMedia === 'function') {
+    try {
+      if (globalThis.matchMedia('(max-width: 720px)').matches) return 'portrait'
+    } catch {
+      /* ignore */
+    }
+  }
+  return 'landscape'
+}
 
 export const BOARD_HEX_MIN = 20
 export const BOARD_HEX_MAX = 100
@@ -88,10 +105,11 @@ function pixelAspectRatioFromBounds(minX: number, maxX: number, minY: number, ma
   return w / h
 }
 
-function pickLandscapeBiasedNeighbor(
+function pickAspectBiasedNeighbor(
   rng: Rng,
   set: Map<string, HexCoord>,
   candidates: HexCoord[],
+  bias: BoardGrowthBias,
 ): HexCoord {
   if (candidates.length === 1) return candidates[0]!
   const { minX, maxX, minY, maxY } = pixelBoundsOfCoordSet(set)
@@ -103,7 +121,11 @@ function pickLandscapeBiasedNeighbor(
       Math.min(minY, p.y),
       Math.max(maxY, p.y),
     )
-    return Math.pow(ar, LANDSCAPE_GROWTH_BIAS_EXP)
+    if (bias === 'landscape') {
+      return Math.pow(ar, GROWTH_BIAS_EXP)
+    }
+    const tall = ar > 1e-9 ? 1 / ar : 1e9
+    return Math.pow(tall, GROWTH_BIAS_EXP)
   })
   let total = 0
   for (const w of weights) total += w
@@ -115,7 +137,7 @@ function pickLandscapeBiasedNeighbor(
   return candidates[candidates.length - 1]!
 }
 
-function growBlobCoords(rng: Rng, size: number): Map<string, HexCoord> {
+function growBlobCoords(rng: Rng, size: number, bias: BoardGrowthBias): Map<string, HexCoord> {
   const set = new Map<string, HexCoord>()
   set.set(coordKey(0, 0), { q: 0, r: 0 })
 
@@ -139,7 +161,7 @@ function growBlobCoords(rng: Rng, size: number): Map<string, HexCoord> {
 
     const candidates = axialNeighbors(c).filter((n) => !set.has(coordKey(n.q, n.r)))
     if (candidates.length === 0) continue
-    const chosen = pickLandscapeBiasedNeighbor(rng, set, candidates)
+    const chosen = pickAspectBiasedNeighbor(rng, set, candidates, bias)
     set.set(coordKey(chosen.q, chosen.r), chosen)
   }
 
@@ -192,7 +214,12 @@ export interface GeneratedBoard {
   hexRadius: number
 }
 
-export function generateBoard(rng: Rng, size: number): GeneratedBoard {
+export interface GenerateBoardOptions {
+  growthBias?: BoardGrowthBias
+}
+
+export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOptions): GeneratedBoard {
+  const growthBias = opts?.growthBias ?? 'landscape'
   const target = clampBoardHexCount(size)
   const maxNeighbor1 = maxDegreeOneTiles(target)
   const maxAttempts = target > 60 ? 150 : 90
@@ -201,7 +228,7 @@ export function generateBoard(rng: Rng, size: number): GeneratedBoard {
 
   while (attempt < maxAttempts) {
     rng.state = (baseRngState + attempt * 0x9e3779b9) >>> 0
-    const coordMap = growBlobCoords(rng, target)
+    const coordMap = growBlobCoords(rng, target, growthBias)
     if (coordMap.size !== target) {
       attempt++
       continue
@@ -241,9 +268,15 @@ export function generateBoard(rng: Rng, size: number): GeneratedBoard {
     const b = pixelBoundsOfCoordSet(coordMap)
     const aspect = pixelAspectRatioFromBounds(b.minX, b.maxX, b.minY, b.maxY)
     const relaxAspect = attempt >= maxAttempts - ASPECT_RELAX_LAST_ATTEMPTS
-    if (!relaxAspect && aspect < MIN_BOARD_PIXEL_ASPECT) {
-      attempt++
-      continue
+    if (!relaxAspect) {
+      if (growthBias === 'landscape' && aspect < MIN_BOARD_PIXEL_ASPECT) {
+        attempt++
+        continue
+      }
+      if (growthBias === 'portrait' && aspect > MAX_BOARD_PIXEL_ASPECT_PORTRAIT) {
+        attempt++
+        continue
+      }
     }
 
     return { tiles, tileIds, hexRadius: radius }

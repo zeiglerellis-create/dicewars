@@ -1,4 +1,9 @@
-import { generateBoard, assignRandomOwners, clampBoardHexCount } from './boardGen'
+import {
+  assignRandomOwners,
+  clampBoardHexCount,
+  defaultBoardGrowthBias,
+  generateBoard,
+} from './boardGen'
 import { createRng, nextInt, rollD6, type Rng } from './rng'
 import { largestConnectedComponentSize } from './scoring'
 import type { BattleLogEntry, GameState, HexTile, PlayerId } from './types'
@@ -139,7 +144,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
   const skipPlacementStart = opts?.skipPlacementStart ?? true
   const rng = createRng(randomSeed32())
-  const board = generateBoard(rng, n)
+  const board = generateBoard(rng, n, { growthBias: defaultBoardGrowthBias() })
   assignRandomOwners(rng, board.tiles, board.tileIds, playerCount)
 
   if (skipPlacementStart) {
@@ -179,7 +184,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
 
 function regenerateBoardAtCurrentSize(state: GameState): string | null {
   const rng = createRng(randomSeed32())
-  const board = generateBoard(rng, state.boardHexCount)
+  const board = generateBoard(rng, state.boardHexCount, { growthBias: defaultBoardGrowthBias() })
   assignRandomOwners(rng, board.tiles, board.tileIds, state.playerCount)
   state.tiles = board.tiles
   state.tileIds = board.tileIds
