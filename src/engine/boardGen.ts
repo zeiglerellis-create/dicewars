@@ -1,7 +1,15 @@
-import { axialNeighbors, axialToPixel, coordKey } from './hex'
-import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN, type HexCoord, type HexTile, type PlayerId } from './types'
+import { axialDistance, axialNeighbors, axialToPixel, coordKey } from './hex'
+import {
+  PLAYER_COUNT_MAX,
+  PLAYER_COUNT_MIN,
+  type HexCoord,
+  type HexTile,
+  type IslandCount,
+  type PlayerId,
+} from './types'
 import type { Rng } from './rng'
-import { nextFloat, shuffleInPlace } from './rng'
+import { nextFloat, nextInt, shuffleInPlace } from './rng'
+import { boardCentroidFromCenters, routeEdgePorts, routeSegmentHitsAny, type XY } from './routeGeom'
 
 /** Bias growth steps toward wider (landscape) or taller (portrait) pixel bounds. */
 const GROWTH_BIAS_EXP = 2.4
@@ -38,48 +46,307 @@ export function clampBoardHexCount(n: number): number {
   return Math.min(BOARD_HEX_MAX, Math.max(BOARD_HEX_MIN, Math.floor(Number(n))))
 }
 
-/** Perimeter hexes (at least one empty axial neighbor slot on the island). */
-export const TUNNEL_PAIR_COUNT = 4
+/** Each landmass needs at least this many hexes when using multiple islands. */
+export const MIN_HEXES_PER_ISLAND = 6
+
+/** Grid steps (before routes) between route endpoints on one landmass. */
+export const ROUTE_GRAPH_DIST_MIN = 3
+export const ROUTE_GRAPH_DIST_MAX = 5
+
+/** One landmass: at most this many routes; perimeter pairs are 3–5 steps apart; dotted segments do not cross. */
+export const MAX_ROUTES_SINGLE_ISLAND = 3
+
+export const DEFAULT_ISLAND_COUNT: IslandCount = 2
+
+export function clampIslandCount(n: number): IslandCount {
+  const x = Math.floor(Number(n))
+  if (Number.isNaN(x) || x <= 1) return 1
+  if (x >= 3) return 3
+  return x as IslandCount
+}
+
+function effectiveIslandCount(requested: IslandCount, totalHexes: number): IslandCount {
+  const maxK = Math.min(3, Math.max(1, Math.floor(totalHexes / MIN_HEXES_PER_ISLAND))) as IslandCount
+  return (requested <= maxK ? requested : maxK) as IslandCount
+}
+
+function splitIslandSizes(total: number, k: number): number[] | null {
+  if (total < k * MIN_HEXES_PER_ISLAND) return null
+  const sizes = Array.from({ length: k }, (_, i) => Math.floor(total / k) + (i < total % k ? 1 : 0))
+  while (true) {
+    const low = sizes.findIndex((s) => s < MIN_HEXES_PER_ISLAND)
+    if (low < 0) break
+    const hi = sizes.indexOf(Math.max(...sizes))
+    if (hi < 0 || sizes[hi]! <= MIN_HEXES_PER_ISLAND) return null
+    sizes[hi]!--
+    sizes[low]!++
+  }
+  return sizes
+}
+
+function translateCoordMap(m: Map<string, HexCoord>, dq: number, dr: number): Map<string, HexCoord> {
+  const out = new Map<string, HexCoord>()
+  for (const c of m.values()) {
+    const nc = { q: c.q + dq, r: c.r + dr }
+    out.set(coordKey(nc.q, nc.r), nc)
+  }
+  return out
+}
+
+function minAxialSeparation(merged: Map<string, HexCoord>, add: Map<string, HexCoord>): number {
+  let m = Infinity
+  for (const ca of merged.values()) {
+    for (const cb of add.values()) {
+      m = Math.min(m, axialDistance(ca, cb))
+    }
+  }
+  return m
+}
+
+function mergeIslandLayouts(
+  rng: Rng,
+  blobs: Map<string, HexCoord>[],
+): { merged: Map<string, HexCoord>; islandOfKey: Map<string, number> } | null {
+  if (blobs.length === 0) return null
+  const merged = new Map<string, HexCoord>(blobs[0]!)
+  const islandOfKey = new Map<string, number>()
+  for (const k of merged.keys()) islandOfKey.set(k, 0)
+
+  for (let bi = 1; bi < blobs.length; bi++) {
+    const raw = blobs[bi]!
+    let placed = false
+    for (let att = 0; att < 200; att++) {
+      let maxQ = -Infinity
+      let minQi = Infinity
+      for (const c of merged.values()) {
+        maxQ = Math.max(maxQ, c.q)
+      }
+      for (const c of raw.values()) {
+        minQi = Math.min(minQi, c.q)
+      }
+      /** Pack tight: smallest gap is axial distance 2 (no shared edges); minAxialSeparation enforces it. */
+      const dq = maxQ - minQi + nextInt(rng, 0, 2) + Math.floor(att / 45)
+      const dr = nextInt(rng, -4, 5) + (att % 9) - 4
+      const shifted = translateCoordMap(raw, dq, dr)
+      let clash = false
+      for (const k of shifted.keys()) {
+        if (merged.has(k)) {
+          clash = true
+          break
+        }
+      }
+      if (clash) continue
+      if (minAxialSeparation(merged, shifted) < 2) continue
+      for (const [k, c] of shifted) {
+        merged.set(k, c)
+        islandOfKey.set(k, bi)
+      }
+      placed = true
+      break
+    }
+    if (!placed) return null
+  }
+  return { merged, islandOfKey }
+}
 
 function boundaryHexIds(tiles: Record<string, HexTile>, tileIds: string[]): string[] {
   return tileIds.filter((id) => tiles[id].neighbors.length < 6)
 }
 
-/**
- * Add `pairCount` tunnel edges between random boundary hexes (not already grid-adjacent).
- * Mutates `tiles` neighbors symmetrically. Returns the pairs for UI / state.
- */
-function addRandomTunnels(
+function bfsGridDist(gridAdj: Record<string, string[]>, a: string, b: string): number {
+  if (a === b) return 0
+  const q: string[] = [a]
+  const dist = new Map<string, number>([[a, 0]])
+  while (q.length) {
+    const u = q.shift()!
+    const d = dist.get(u)!
+    for (const v of gridAdj[u]!) {
+      if (dist.has(v)) continue
+      if (v === b) return d + 1
+      dist.set(v, d + 1)
+      q.push(v)
+    }
+  }
+  return -1
+}
+
+function validateIslandConnected(
+  tiles: Record<string, HexTile>,
+  tileIds: string[],
+  islandIdx: number,
+  gridAdj: Record<string, string[]>,
+): boolean {
+  const ids = tileIds.filter((id) => tiles[id].islandIndex === islandIdx)
+  if (ids.length === 0) return true
+  const start = ids[0]!
+  const seen = new Set<string>()
+  const stack = [start]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    for (const n of gridAdj[id]!) {
+      if (tiles[n].islandIndex === islandIdx) stack.push(n)
+    }
+  }
+  return seen.size === ids.length
+}
+
+function tryAddRoute(
+  tiles: Record<string, HexTile>,
+  a: string,
+  b: string,
+  used: Set<string>,
+  segments: [XY, XY][],
+  pairs: [string, string][],
+  boardC: XY,
+): boolean {
+  if (used.has(a) || used.has(b)) return false
+  const ia = tiles[a].islandIndex
+  const ib = tiles[b].islandIndex
+  if (ia === ib) return false
+  const ax = tiles[a].center.x
+  const ay = tiles[a].center.y
+  const bx = tiles[b].center.x
+  const by = tiles[b].center.y
+  const { pa, pb } = routeEdgePorts(ax, ay, bx, by, boardC)
+  if (routeSegmentHitsAny(pa, pb, segments)) return false
+  tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
+  tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
+  segments.push([pa, pb])
+  used.add(a)
+  used.add(b)
+  pairs.push([a, b])
+  return true
+}
+
+function routeIncidenceByIsland(
+  tiles: Record<string, HexTile>,
+  pairs: [string, string][],
+  k: number,
+): number[] {
+  const deg = Array(k).fill(0)
+  for (const [a, b] of pairs) {
+    deg[tiles[a].islandIndex]++
+    deg[tiles[b].islandIndex]++
+  }
+  return deg
+}
+
+function placeRoutesSingleIsland(
   rng: Rng,
   tiles: Record<string, HexTile>,
   tileIds: string[],
-  pairCount: number,
+  gridAdj: Record<string, string[]>,
+  maxPairs: number,
 ): [string, string][] {
+  if (maxPairs <= 0) return []
   const boundary = boundaryHexIds(tiles, tileIds)
-  if (boundary.length < 2 || pairCount <= 0) return []
-
   const candidates: [string, string][] = []
   for (let i = 0; i < boundary.length; i++) {
     for (let j = i + 1; j < boundary.length; j++) {
       const a = boundary[i]!
       const b = boundary[j]!
-      if (tiles[a].neighbors.includes(b)) continue
+      if (gridAdj[a].includes(b)) continue
+      const d = bfsGridDist(gridAdj, a, b)
+      if (d < ROUTE_GRAPH_DIST_MIN || d > ROUTE_GRAPH_DIST_MAX) continue
       candidates.push([a, b])
     }
   }
   shuffleInPlace(rng, candidates)
-
-  const pairs: [string, string][] = []
+  const boardC = boardCentroidFromCenters(tileIds.map((id) => tiles[id].center))
+  const segments: [XY, XY][] = []
   const used = new Set<string>()
+  const pairs: [string, string][] = []
   for (const [a, b] of candidates) {
-    if (pairs.length >= pairCount) break
+    if (pairs.length >= maxPairs) break
     if (used.has(a) || used.has(b)) continue
+    const ax = tiles[a].center.x
+    const ay = tiles[a].center.y
+    const bx = tiles[b].center.x
+    const by = tiles[b].center.y
+    const { pa, pb } = routeEdgePorts(ax, ay, bx, by, boardC)
+    if (routeSegmentHitsAny(pa, pb, segments)) continue
     tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
     tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
+    segments.push([pa, pb])
     used.add(a)
     used.add(b)
     pairs.push([a, b])
   }
+  return pairs
+}
+
+function placeRoutesMultiIsland(
+  rng: Rng,
+  tiles: Record<string, HexTile>,
+  tileIds: string[],
+  gridAdj: Record<string, string[]>,
+  k: number,
+): [string, string][] {
+  const boundary = boundaryHexIds(tiles, tileIds)
+  const cross: [string, string][] = []
+  for (let i = 0; i < boundary.length; i++) {
+    for (let j = i + 1; j < boundary.length; j++) {
+      const a = boundary[i]!
+      const b = boundary[j]!
+      if (tiles[a].islandIndex === tiles[b].islandIndex) continue
+      if (gridAdj[a].includes(b)) continue
+      cross.push([a, b])
+    }
+  }
+  if (cross.length === 0) return []
+  shuffleInPlace(rng, cross)
+
+  const boardC = boardCentroidFromCenters(tileIds.map((id) => tiles[id].center))
+
+  const parent = Array.from({ length: k }, (_, i) => i)
+  function find(i: number): number {
+    return parent[i] === i ? i : (parent[i] = find(parent[i]!))
+  }
+
+  const segments: [XY, XY][] = []
+  const used = new Set<string>()
+  const pairs: [string, string][] = []
+
+  for (const [a, b] of cross) {
+    const ia = tiles[a].islandIndex
+    const ib = tiles[b].islandIndex
+    const ru = find(ia)
+    const rv = find(ib)
+    if (ru === rv) continue
+    if (!tryAddRoute(tiles, a, b, used, segments, pairs, boardC)) continue
+    parent[ru] = rv
+  }
+
+  const r0 = find(0)
+  for (let i = 1; i < k; i++) {
+    if (find(i) !== r0) return []
+  }
+
+  const crossPool = [...cross]
+  let deg = routeIncidenceByIsland(tiles, pairs, k)
+  for (let guard = 0; guard < 100 && deg.some((d) => d < 2); guard++) {
+    const low = deg.findIndex((d) => d < 2)
+    if (low < 0) break
+    shuffleInPlace(rng, crossPool)
+    let added = false
+    for (const [a, b] of crossPool) {
+      const ia = tiles[a].islandIndex
+      const ib = tiles[b].islandIndex
+      if (ia === ib) continue
+      if (ia !== low && ib !== low) continue
+      if (used.has(a) || used.has(b)) continue
+      if (tryAddRoute(tiles, a, b, used, segments, pairs, boardC)) {
+        deg = routeIncidenceByIsland(tiles, pairs, k)
+        added = true
+        break
+      }
+    }
+    if (!added) break
+  }
+
+  if (deg.some((d) => d < 2)) return []
 
   return pairs
 }
@@ -258,27 +525,58 @@ export interface GeneratedBoard {
   tiles: Record<string, HexTile>
   tileIds: string[]
   hexRadius: number
-  tunnels: [string, string][]
+  routes: [string, string][]
+  islandCount: IslandCount
 }
 
 export interface GenerateBoardOptions {
   growthBias?: BoardGrowthBias
+  islandCount?: IslandCount
 }
 
 export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOptions): GeneratedBoard {
   const growthBias = opts?.growthBias ?? 'landscape'
+  const requestedIslands =
+    opts?.islandCount !== undefined ? clampIslandCount(opts.islandCount) : DEFAULT_ISLAND_COUNT
   const target = clampBoardHexCount(size)
+  const kEff = effectiveIslandCount(requestedIslands, target)
   const maxNeighbor1 = maxDegreeOneTiles(target)
-  const maxAttempts = target > 60 ? 150 : 90
+  const maxAttempts = target > 60 ? 180 : 120
   let attempt = 0
   const baseRngState = rng.state
 
-  while (attempt < maxAttempts) {
+  outer: while (attempt < maxAttempts) {
     rng.state = (baseRngState + attempt * 0x9e3779b9) >>> 0
-    const coordMap = growBlobCoords(rng, target, growthBias)
-    if (coordMap.size !== target) {
-      attempt++
-      continue
+
+    let coordMap: Map<string, HexCoord>
+    let islandOfKey: Map<string, number>
+
+    if (kEff === 1) {
+      coordMap = growBlobCoords(rng, target, growthBias)
+      if (coordMap.size !== target) {
+        attempt++
+        continue
+      }
+      islandOfKey = new Map()
+      for (const k of coordMap.keys()) islandOfKey.set(k, 0)
+    } else {
+      const sizes = splitIslandSizes(target, kEff)
+      if (!sizes) {
+        attempt++
+        continue
+      }
+      const blobs = sizes.map((sz) => growBlobCoords(rng, sz, growthBias))
+      if (blobs.some((b, i) => b.size !== sizes[i]!)) {
+        attempt++
+        continue
+      }
+      const layout = mergeIslandLayouts(rng, blobs)
+      if (!layout) {
+        attempt++
+        continue
+      }
+      coordMap = layout.merged
+      islandOfKey = layout.islandOfKey
     }
 
     const adjKeys = buildNeighbors(coordMap)
@@ -295,6 +593,7 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       tiles[id] = {
         id,
         coord: c,
+        islandIndex: islandOfKey.get(key)!,
         neighbors: nIds,
         owner: 1,
         dice: 1,
@@ -302,9 +601,23 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       }
     }
 
-    if (!validateConnectivity(tiles, tileIds, target)) {
-      attempt++
-      continue
+    const gridAdj: Record<string, string[]> = {}
+    for (const id of tileIds) {
+      gridAdj[id] = [...tiles[id].neighbors]
+    }
+
+    if (kEff === 1) {
+      if (!validateConnectivity(tiles, tileIds, target)) {
+        attempt++
+        continue
+      }
+    } else {
+      for (let ii = 0; ii < kEff; ii++) {
+        if (!validateIslandConnected(tiles, tileIds, ii, gridAdj)) {
+          attempt++
+          continue outer
+        }
+      }
     }
 
     if (countDegreeOne(tiles) > maxNeighbor1) {
@@ -326,9 +639,21 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       }
     }
 
-    const tunnels = addRandomTunnels(rng, tiles, tileIds, TUNNEL_PAIR_COUNT)
+    const routes =
+      kEff === 1
+        ? placeRoutesSingleIsland(rng, tiles, tileIds, gridAdj, MAX_ROUTES_SINGLE_ISLAND)
+        : placeRoutesMultiIsland(rng, tiles, tileIds, gridAdj, kEff)
 
-    return { tiles, tileIds, hexRadius: radius, tunnels }
+    if (!validateAdjacencySymmetric(tiles)) {
+      attempt++
+      continue
+    }
+    if (!validateConnectivity(tiles, tileIds, target)) {
+      attempt++
+      continue
+    }
+
+    return { tiles, tileIds, hexRadius: radius, routes, islandCount: kEff }
   }
 
   throw new Error(`Failed to generate valid ${target}-hex board`)

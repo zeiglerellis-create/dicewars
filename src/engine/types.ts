@@ -1,6 +1,9 @@
 /** In-game player slot 1 … playerCount (max 8). */
 export type PlayerId = number
 
+/** Disconnected landmasses on one map; linked only by routes when > 1. */
+export type IslandCount = 1 | 2 | 3
+
 export const PLAYER_COUNT_MIN = 2
 export const PLAYER_COUNT_MAX = 8
 
@@ -12,6 +15,8 @@ export interface HexCoord {
 export interface HexTile {
   id: string
   coord: HexCoord
+  /** Landmass index (0 … islandCount−1). */
+  islandIndex: number
   neighbors: string[]
   owner: PlayerId
   dice: number
@@ -54,6 +59,8 @@ export interface BattleUiState {
 export interface GameState {
   /** Number of hexes on this map (30–100). */
   boardHexCount: number
+  /** Landmass count for this map (may be clamped down if hex count is too small). */
+  islandCount: IslandCount
   /** Active players in this session (2–8). */
   playerCount: number
   /**
@@ -89,8 +96,8 @@ export interface GameState {
   /** Latest reinforcement +1 for float animation (UI may clear after display) */
   reinforcementPop?: { hexId: string; seq: number }
   /**
-   * Extra adjacency (wormholes): each pair is two distinct perimeter hexes linked for movement,
-   * attacks, and largest-cluster scoring. Generated with the map.
+   * Extra adjacency: each pair links two perimeter hexes for movement, attacks, and scoring.
+   * Drawn as edge ports + dotted segments (non-crossing). Generated with the map.
    */
-  tunnels: [string, string][]
+  routes: [string, string][]
 }

@@ -2,43 +2,94 @@ import { describe, expect, it } from 'vitest'
 import { createRng } from './rng'
 import {
   BOARD_HEX_MIN,
-  TUNNEL_PAIR_COUNT,
+  MAX_ROUTES_SINGLE_ISLAND,
+  ROUTE_GRAPH_DIST_MAX,
+  ROUTE_GRAPH_DIST_MIN,
   generateBoard,
   validateAdjacencySymmetric,
   validateConnectivity,
   validateCount,
 } from './boardGen'
 
-describe('tunnels', () => {
-  it('adds up to four symmetric links between non-adjacent perimeter hexes', () => {
+function bfsGridDist(
+  gridAdj: Record<string, string[]>,
+  a: string,
+  b: string,
+): number {
+  if (a === b) return 0
+  const q: string[] = [a]
+  const dist = new Map<string, number>([[a, 0]])
+  while (q.length) {
+    const u = q.shift()!
+    const d = dist.get(u)!
+    for (const v of gridAdj[u]!) {
+      if (dist.has(v)) continue
+      if (v === b) return d + 1
+      dist.set(v, d + 1)
+      q.push(v)
+    }
+  }
+  return -1
+}
+
+describe('routes', () => {
+  it('single-island: perimeter pairs, grid distance 3–5, symmetric, connected', () => {
     const rng = createRng(1202)
-    const { tiles, tileIds, tunnels } = generateBoard(rng, 40)
-    expect(tunnels.length).toBeGreaterThan(0)
-    expect(tunnels.length).toBeLessThanOrEqual(TUNNEL_PAIR_COUNT)
+    const { tiles, tileIds, routes, islandCount } = generateBoard(rng, 40, { islandCount: 1 })
+    expect(islandCount).toBe(1)
+    expect(routes.length).toBeGreaterThan(0)
+    expect(routes.length).toBeLessThanOrEqual(MAX_ROUTES_SINGLE_ISLAND)
     expect(validateAdjacencySymmetric(tiles)).toBe(true)
     expect(validateConnectivity(tiles, tileIds, 40)).toBe(true)
+
+    const routeEdge = new Set<string>()
+    for (const [a, b] of routes) {
+      routeEdge.add(`${a}|${b}`)
+      routeEdge.add(`${b}|${a}`)
+    }
+    const gridOnly: Record<string, string[]> = {}
+    for (const id of tileIds) {
+      gridOnly[id] = tiles[id].neighbors.filter((n) => !routeEdge.has(`${id}|${n}`))
+    }
+
+    const gridBoundary = tileIds.filter((id) => gridOnly[id]!.length < 6)
     const seen = new Set<string>()
-    for (const [a, b] of tunnels) {
+    for (const [a, b] of routes) {
       expect(a).not.toBe(b)
+      expect(gridBoundary.includes(a)).toBe(true)
+      expect(gridBoundary.includes(b)).toBe(true)
       expect(tileIds.includes(a)).toBe(true)
       expect(tileIds.includes(b)).toBe(true)
       expect(tiles[a].neighbors.includes(b)).toBe(true)
       expect(tiles[b].neighbors.includes(a)).toBe(true)
-      expect(tiles[a].neighbors.length).toBeLessThanOrEqual(7)
-      expect(tiles[b].neighbors.length).toBeLessThanOrEqual(7)
+      const d = bfsGridDist(gridOnly, a, b)
+      expect(d).toBeGreaterThanOrEqual(ROUTE_GRAPH_DIST_MIN)
+      expect(d).toBeLessThanOrEqual(ROUTE_GRAPH_DIST_MAX)
       const key = a < b ? `${a}|${b}` : `${b}|${a}`
       expect(seen.has(key)).toBe(false)
       seen.add(key)
     }
   })
 
-  it('often reaches the tunnel budget on 40-hex boards', () => {
-    let four = 0
-    for (let s = 0; s < 32; s++) {
-      const rng = createRng(8800 + s)
-      if (generateBoard(rng, 40).tunnels.length === TUNNEL_PAIR_COUNT) four++
+  it('multi-island: each island has at least two route incidences', () => {
+    const rng = createRng(3311)
+    const { tiles, tileIds, routes, islandCount } = generateBoard(rng, 40, { islandCount: 2 })
+    expect(islandCount).toBe(2)
+    expect(routes.length).toBeGreaterThanOrEqual(2)
+    expect(validateConnectivity(tiles, tileIds, 40)).toBe(true)
+    const deg = [0, 0]
+    for (const [a, b] of routes) {
+      deg[tiles[a].islandIndex]++
+      deg[tiles[b].islandIndex]++
     }
-    expect(four).toBeGreaterThanOrEqual(20)
+    expect(deg[0]).toBeGreaterThanOrEqual(2)
+    expect(deg[1]).toBeGreaterThanOrEqual(2)
+  })
+
+  it('uses three landmasses when hex budget allows', () => {
+    const rng = createRng(9001)
+    const { islandCount } = generateBoard(rng, 40, { islandCount: 3 })
+    expect(islandCount).toBe(3)
   })
 })
 

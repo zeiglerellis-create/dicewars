@@ -2,7 +2,7 @@ import {
   BOARD_HEX_PRESETS,
   type BoardHexPreset,
 } from '../engine/boardGen'
-import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN, type GameState } from '../engine/types'
+import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN, type GameState, type IslandCount } from '../engine/types'
 
 export interface BoardChromeProps {
   game: GameState
@@ -10,6 +10,7 @@ export interface BoardChromeProps {
   onStartGame: () => void
   onSetPlayerCount: (n: number) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
+  onSetIslandCount: (n: number) => void
 }
 
 export interface BoardStatusStripProps {
@@ -58,7 +59,7 @@ function battlePrompt(game: GameState): { title: string; detail: string } | null
   return {
     title: sel ? 'Choose an adjacent enemy hex to attack' : 'Choose one of your hexes to attack from',
     detail:
-      'Need at least 2 dice on the attacker. Tunnels count as adjacency. When finished, tap the end-turn (arrow) icon.',
+      'Need at least 2 dice on the attacker. Routes count as adjacency. When finished, tap the end-turn (arrow) icon.',
   }
 }
 
@@ -67,6 +68,8 @@ const SIZE_LABELS: Record<BoardHexPreset, string> = {
   40: 'Medium',
   60: 'Large',
 }
+
+const ISLAND_PRESETS: IslandCount[] = [1, 2, 3]
 
 function IconEndTurn() {
   return (
@@ -115,7 +118,7 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Tunnels: matching numbers & colors link two edge hexes around the outside. ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Routes: matching colors link two edge ports with a dotted line (no crossings). Several islands: only routes between landmasses (each has ≥2). ↻ new map; Start when ready.',
       }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 
@@ -167,6 +170,7 @@ export function BoardChrome({
   onStartGame,
   onSetPlayerCount,
   onSetBoardHexPreset,
+  onSetIslandCount,
 }: BoardChromeProps) {
   const pregame = game.phase === 'PREGAME'
 
@@ -194,6 +198,27 @@ export function BoardChrome({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="dw-setup-field">
+              <span className="dw-setup-field-label" id="dw-setup-islands-label">
+                Islands
+              </span>
+              <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-islands-label">
+                {ISLAND_PRESETS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={
+                      'dw-setup-size-btn' + (game.islandCount === n ? ' dw-setup-size-btn--active' : '')
+                    }
+                    onClick={() => onSetIslandCount(n)}
+                  >
+                    <span className="dw-setup-size-name">{n === 1 ? 'One' : n === 2 ? 'Two' : 'Three'}</span>
+                    <span className="dw-setup-size-num">{n}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="dw-setup-field">

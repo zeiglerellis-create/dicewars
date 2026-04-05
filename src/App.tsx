@@ -15,6 +15,7 @@ import {
   placementClick,
   randomizeBoardPregame,
   setBoardHexCountPregame,
+  setIslandCountPregame,
   setPlayerCountPregame,
   tickReinforcementAnimation,
 } from './engine/rules'
@@ -73,9 +74,20 @@ export default function App() {
     setGame((prev) =>
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
+        islandCount: prev.islandCount,
       }),
     )
     setError(null)
+  }, [])
+
+  const onSetIslandCount = useCallback((n: number) => {
+    setError(null)
+    setGame((prev) => {
+      const s = structuredClone(prev)
+      const err = setIslandCountPregame(s, n)
+      if (err) queueMicrotask(() => setError(err))
+      return s
+    })
   }, [])
 
   const onSetPlayerCount = useCallback((n: number) => {
@@ -193,6 +205,7 @@ export default function App() {
     setGame((prev) =>
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
+        islandCount: prev.islandCount,
       }),
     )
     setError(null)
@@ -217,6 +230,7 @@ export default function App() {
             onStartGame={onStartGame}
             onSetPlayerCount={onSetPlayerCount}
             onSetBoardHexPreset={onSetBoardHexPreset}
+            onSetIslandCount={onSetIslandCount}
           />
         </div>
         <BoardStatusStrip game={game} onEndTurn={onEndTurn} onSkipAiTurns={onSkipAiTurns} />

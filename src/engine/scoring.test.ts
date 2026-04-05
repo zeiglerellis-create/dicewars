@@ -11,6 +11,7 @@ function makeTile(
   return {
     id,
     coord: { q: 0, r: 0 },
+    islandIndex: 0,
     neighbors,
     owner,
     dice,

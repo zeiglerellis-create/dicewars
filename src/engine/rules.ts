@@ -1,7 +1,9 @@
 import {
   assignRandomOwners,
   clampBoardHexCount,
+  clampIslandCount,
   defaultBoardGrowthBias,
+  DEFAULT_ISLAND_COUNT,
   generateBoard,
 } from './boardGen'
 import { createRng, nextInt, rollD6, type Rng } from './rng'
@@ -137,14 +139,21 @@ export interface CreateGameOptions {
   playerCount?: number
   /** @default true (battle start). Pass `false` only for tests of the placement phase. */
   skipPlacementStart?: boolean
+  /** @default 2. Clamped to 1–3; may be reduced at generation time if hex count is too small. */
+  islandCount?: number
 }
 
 export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOptions): GameState {
   const n = clampBoardHexCount(boardHexCount)
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
   const skipPlacementStart = opts?.skipPlacementStart ?? true
+  const islandRequest =
+    opts?.islandCount !== undefined ? clampIslandCount(opts.islandCount) : DEFAULT_ISLAND_COUNT
   const rng = createRng(randomSeed32())
-  const board = generateBoard(rng, n, { growthBias: defaultBoardGrowthBias() })
+  const board = generateBoard(rng, n, {
+    growthBias: defaultBoardGrowthBias(),
+    islandCount: islandRequest,
+  })
   assignRandomOwners(rng, board.tiles, board.tileIds, playerCount)
 
   if (skipPlacementStart) {
@@ -160,6 +169,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
 
   return {
     boardHexCount: n,
+    islandCount: board.islandCount,
     playerCount,
     skipPlacementStart,
     rngState: rng.state,
@@ -167,7 +177,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
     currentPlayer: 1,
     tiles: board.tiles,
     tileIds: board.tileIds,
-    tunnels: board.tunnels,
+    routes: board.routes,
     placement: {
       remainingByPlayer: buildPlacementRemaining(playerCount),
       order,
@@ -185,11 +195,15 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
 
 function regenerateBoardAtCurrentSize(state: GameState): string | null {
   const rng = createRng(randomSeed32())
-  const board = generateBoard(rng, state.boardHexCount, { growthBias: defaultBoardGrowthBias() })
+  const board = generateBoard(rng, state.boardHexCount, {
+    growthBias: defaultBoardGrowthBias(),
+    islandCount: state.islandCount,
+  })
   assignRandomOwners(rng, board.tiles, board.tileIds, state.playerCount)
   state.tiles = board.tiles
   state.tileIds = board.tileIds
-  state.tunnels = board.tunnels
+  state.routes = board.routes
+  state.islandCount = board.islandCount
   state.logs = []
   state.lastBattleOverlay = undefined
   state.reinforcementAnimation = undefined
@@ -212,6 +226,13 @@ export function randomizeBoardPregame(state: GameState): string | null {
 export function setBoardHexCountPregame(state: GameState, rawCount: number): string | null {
   if (state.phase !== 'PREGAME') return 'Change size only during setup'
   state.boardHexCount = clampBoardHexCount(rawCount)
+  return regenerateBoardAtCurrentSize(state)
+}
+
+/** Set landmass count (1–3) and regenerate map (pre-game only). */
+export function setIslandCountPregame(state: GameState, raw: number): string | null {
+  if (state.phase !== 'PREGAME') return 'Change islands only during setup'
+  state.islandCount = clampIslandCount(raw)
   return regenerateBoardAtCurrentSize(state)
 }
 
@@ -521,6 +542,7 @@ export function flushReinforcementAnimation(state: GameState): void {
 export function resetGame(state: GameState): void {
   const next = createInitialGameState(state.boardHexCount, {
     playerCount: state.playerCount,
+    islandCount: state.islandCount,
   })
   Object.assign(state, next)
 }

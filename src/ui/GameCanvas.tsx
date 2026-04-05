@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { hexCorners, pointInConvexPolygon } from '../engine/hex'
+import { hexCorners, hexEdgePortBoardOutside, pointInConvexPolygon } from '../engine/hex'
+import { ROUTE_HEX_RIM } from '../engine/routeGeom'
 import type { GameState, PlayerId } from '../engine/types'
 
 const WORLD_HEX_RADIUS = 1
@@ -53,14 +54,14 @@ function diceLabelColor(owner: PlayerId): string {
   return owner === 4 || owner === 8 ? '#14161c' : '#f8fafc'
 }
 
-/** Distinct tunnel pairs: stroke + badge fill (labels 1…n). */
-const TUNNEL_STYLES = [
-  { stroke: '#fbbf24', badge: '#fbbf24', glow: 'rgba(251, 191, 36, 0.5)' },
-  { stroke: '#a78bfa', badge: '#a78bfa', glow: 'rgba(167, 139, 250, 0.5)' },
-  { stroke: '#34d399', badge: '#34d399', glow: 'rgba(52, 211, 153, 0.5)' },
-  { stroke: '#f472b6', badge: '#f472b6', glow: 'rgba(244, 114, 182, 0.5)' },
-  { stroke: '#38bdf8', badge: '#38bdf8', glow: 'rgba(56, 189, 248, 0.5)' },
-  { stroke: '#fb923c', badge: '#fb923c', glow: 'rgba(251, 146, 60, 0.5)' },
+/** Distinct route pairs: dotted stroke + port fill. */
+const ROUTE_STYLES = [
+  { stroke: '#fbbf24', port: '#fbbf24' },
+  { stroke: '#a78bfa', port: '#a78bfa' },
+  { stroke: '#34d399', port: '#34d399' },
+  { stroke: '#f472b6', port: '#f472b6' },
+  { stroke: '#38bdf8', port: '#38bdf8' },
+  { stroke: '#fb923c', port: '#fb923c' },
 ] as const
 
 function boardCentroid(game: GameState): { x: number; y: number } {
@@ -74,95 +75,20 @@ function boardCentroid(game: GameState): { x: number; y: number } {
   return { x: x / n, y: y / n }
 }
 
-function maxHexDistanceFrom(game: GameState, cx: number, cy: number): number {
-  let m = 0
-  for (const id of game.tileIds) {
-    const p = game.tiles[id].center
-    m = Math.max(m, Math.hypot(p.x - cx, p.y - cy))
-  }
-  return m || 1
-}
-
-/** Unit vector from centroid toward P (or fallback). */
-function outwardUnit(P: { x: number; y: number }, C: { x: number; y: number }): { x: number; y: number } {
-  const vx = P.x - C.x
-  const vy = P.y - C.y
-  const len = Math.hypot(vx, vy) || 1
-  return { x: vx / len, y: vy / len }
-}
-
-/**
- * Path: rim of hex A → arc outside the island → rim of hex B. Drawn in world space.
- */
-function traceOutsideTunnelPath(
-  ctx: CanvasRenderingContext2D,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  C: { x: number; y: number },
-  boardR: number,
-): void {
-  const nA = outwardUnit({ x: ax, y: ay }, C)
-  const nB = outwardUnit({ x: bx, y: by }, C)
-  /** Past hex edge, into “outside” band */
-  const rim = 0.52
-  const push = Math.max(0.95, boardR * 0.28)
-  const ax0 = ax + nA.x * rim
-  const ay0 = ay + nA.y * rim
-  const bx0 = bx + nB.x * rim
-  const by0 = by + nB.y * rim
-  const outA = { x: ax + nA.x * push, y: ay + nA.y * push }
-  const outB = { x: bx + nB.x * push, y: by + nB.y * push }
-
-  const mid = { x: (outA.x + outB.x) / 2, y: (outA.y + outB.y) / 2 }
-  let ux = mid.x - C.x
-  let uy = mid.y - C.y
-  let ulen = Math.hypot(ux, uy)
-  if (ulen < 0.12) {
-    const abx = bx - ax
-    const aby = by - ay
-    ux = -aby
-    uy = abx
-    ulen = Math.hypot(ux, uy) || 1
-  }
-  ux /= ulen
-  uy /= ulen
-  const chord = Math.hypot(outB.x - outA.x, outB.y - outA.y)
-  const bulge = 0.5 * chord + boardR * 0.22 + 0.35
-  const cx = mid.x + ux * bulge
-  const cy = mid.y + uy * bulge
-
-  ctx.beginPath()
-  ctx.moveTo(ax0, ay0)
-  ctx.lineTo(outA.x, outA.y)
-  ctx.quadraticCurveTo(cx, cy, outB.x, outB.y)
-  ctx.lineTo(bx0, by0)
-}
-
-function drawTunnelEndpointBadge(
+function drawRoutePort(
   ctx: CanvasRenderingContext2D,
   px: number,
   py: number,
-  label: string,
-  style: (typeof TUNNEL_STYLES)[number],
+  style: (typeof ROUTE_STYLES)[number],
 ): void {
-  const r = 0.17
+  const r = 0.11
   ctx.beginPath()
   ctx.arc(px, py, r, 0, Math.PI * 2)
-  ctx.fillStyle = style.badge
+  ctx.fillStyle = style.port
   ctx.fill()
-  ctx.strokeStyle = 'rgba(15, 17, 23, 0.92)'
-  ctx.lineWidth = 0.055
+  ctx.strokeStyle = 'rgba(15, 17, 23, 0.9)'
+  ctx.lineWidth = 0.045
   ctx.stroke()
-  ctx.font = 'bold 0.19px system-ui,sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.lineWidth = 0.038
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-  ctx.strokeText(label, px, py)
-  ctx.fillStyle = '#ffffff'
-  ctx.fillText(label, px, py)
 }
 
 export function GameCanvas({
@@ -180,8 +106,8 @@ export function GameCanvas({
   const [popFrame, setPopFrame] = useState(0)
   const plusOneAnimRef = useRef<{ hexId: string; start: number } | null>(null)
 
-  /** Only changes when hex layout or tunnels change — avoids resetting canvas size every game tick. */
-  const boardTopologyKey = `${game.boardHexCount}|${game.tileIds.join(',')}|${game.tunnels.map(([a, b]) => `${a}~${b}`).join('|')}`
+  /** Only changes when hex layout or routes change — avoids resetting canvas size every game tick. */
+  const boardTopologyKey = `${game.boardHexCount}|${game.islandCount}|${game.tileIds.join(',')}|${game.routes.map(([a, b]) => `${a}~${b}`).join('|')}`
 
   useEffect(() => {
     if (!reinforcementPop) return
@@ -270,6 +196,42 @@ export function GameCanvas({
 
     ctx.setTransform(scale, 0, 0, scale, ox, oy)
 
+    const routes = game.routes
+    const routeBoardC = routes.length > 0 ? boardCentroid(game) : null
+    if (routeBoardC) {
+      const C = routeBoardC
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      routes.forEach(([ia, ib], idx) => {
+        const ta = game.tiles[ia]
+        const tb = game.tiles[ib]
+        if (!ta || !tb) return
+        const st = ROUTE_STYLES[idx % ROUTE_STYLES.length]
+        const ax = ta.center.x
+        const ay = ta.center.y
+        const bx = tb.center.x
+        const by = tb.center.y
+        const pa = hexEdgePortBoardOutside(ax, ay, C.x, C.y, ROUTE_HEX_RIM)
+        const pb = hexEdgePortBoardOutside(bx, by, C.x, C.y, ROUTE_HEX_RIM)
+        ctx.beginPath()
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+        ctx.strokeStyle = 'rgba(15, 17, 23, 0.92)'
+        ctx.lineWidth = 0.085
+        ctx.setLineDash([0.05, 0.09])
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
+        ctx.strokeStyle = st.stroke
+        ctx.lineWidth = 0.048
+        ctx.globalAlpha = 0.88
+        ctx.stroke()
+        ctx.globalAlpha = 1
+      })
+      ctx.setLineDash([])
+    }
+
     const sel = game.battle.selection
     const p = game.currentPlayer
     const humanPlacing = game.phase === 'PLACEMENT' && !game.players.isBot[p]
@@ -311,39 +273,17 @@ export function GameCanvas({
       ctx.fillText(String(t.dice), x, y)
     }
 
-    const tun = game.tunnels
-    if (tun.length > 0) {
-      const C = boardCentroid(game)
-      const boardR = maxHexDistanceFrom(game, C.x, C.y)
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.setLineDash([])
-
-      tun.forEach(([ia, ib], idx) => {
+    if (routeBoardC) {
+      const C = routeBoardC
+      routes.forEach(([ia, ib], idx) => {
         const ta = game.tiles[ia]
         const tb = game.tiles[ib]
         if (!ta || !tb) return
-        const st = TUNNEL_STYLES[idx % TUNNEL_STYLES.length]
-        const nA = outwardUnit(ta.center, C)
-        const nB = outwardUnit(tb.center, C)
-        const ax = ta.center.x
-        const ay = ta.center.y
-        const bx = tb.center.x
-        const by = tb.center.y
-
-        traceOutsideTunnelPath(ctx, ax, ay, bx, by, C, boardR)
-        ctx.strokeStyle = 'rgba(15, 17, 23, 0.85)'
-        ctx.lineWidth = 0.22
-        ctx.stroke()
-        traceOutsideTunnelPath(ctx, ax, ay, bx, by, C, boardR)
-        ctx.strokeStyle = st.stroke
-        ctx.lineWidth = 0.13
-        ctx.stroke()
-
-        const label = String(idx + 1)
-        const badgeDist = 0.4
-        drawTunnelEndpointBadge(ctx, ax + nA.x * badgeDist, ay + nA.y * badgeDist, label, st)
-        drawTunnelEndpointBadge(ctx, bx + nB.x * badgeDist, by + nB.y * badgeDist, label, st)
+        const st = ROUTE_STYLES[idx % ROUTE_STYLES.length]
+        const pa = hexEdgePortBoardOutside(ta.center.x, ta.center.y, C.x, C.y, ROUTE_HEX_RIM)
+        const pb = hexEdgePortBoardOutside(tb.center.x, tb.center.y, C.x, C.y, ROUTE_HEX_RIM)
+        drawRoutePort(ctx, pa.x, pa.y, st)
+        drawRoutePort(ctx, pb.x, pb.y, st)
       })
     }
 
