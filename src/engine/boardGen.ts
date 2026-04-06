@@ -194,6 +194,7 @@ function validateIslandConnected(
 
 function tryAddRoute(
   tiles: Record<string, HexTile>,
+  tileIds: string[],
   a: string,
   b: string,
   used: Set<string>,
@@ -205,11 +206,7 @@ function tryAddRoute(
   const ia = tiles[a].islandIndex
   const ib = tiles[b].islandIndex
   if (ia === ib) return false
-  const ax = tiles[a].center.x
-  const ay = tiles[a].center.y
-  const bx = tiles[b].center.x
-  const by = tiles[b].center.y
-  const { pa, pb } = routeEdgePorts(ax, ay, bx, by, boardC)
+  const { pa, pb } = routeEdgePorts(tiles, tileIds, a, b, boardC)
   if (routeSegmentHitsAny(pa, pb, segments)) return false
   tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
   tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
@@ -261,11 +258,7 @@ function placeRoutesSingleIsland(
   for (const [a, b] of candidates) {
     if (pairs.length >= maxPairs) break
     if (used.has(a) || used.has(b)) continue
-    const ax = tiles[a].center.x
-    const ay = tiles[a].center.y
-    const bx = tiles[b].center.x
-    const by = tiles[b].center.y
-    const { pa, pb } = routeEdgePorts(ax, ay, bx, by, boardC)
+    const { pa, pb } = routeEdgePorts(tiles, tileIds, a, b, boardC)
     if (routeSegmentHitsAny(pa, pb, segments)) continue
     tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
     tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
@@ -315,7 +308,7 @@ function placeRoutesMultiIsland(
     const ru = find(ia)
     const rv = find(ib)
     if (ru === rv) continue
-    if (!tryAddRoute(tiles, a, b, used, segments, pairs, boardC)) continue
+    if (!tryAddRoute(tiles, tileIds, a, b, used, segments, pairs, boardC)) continue
     parent[ru] = rv
   }
 
@@ -337,7 +330,7 @@ function placeRoutesMultiIsland(
       if (ia === ib) continue
       if (ia !== low && ib !== low) continue
       if (used.has(a) || used.has(b)) continue
-      if (tryAddRoute(tiles, a, b, used, segments, pairs, boardC)) {
+      if (tryAddRoute(tiles, tileIds, a, b, used, segments, pairs, boardC)) {
         deg = routeIncidenceByIsland(tiles, pairs, k)
         added = true
         break

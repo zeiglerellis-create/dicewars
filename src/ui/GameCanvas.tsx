@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { hexCorners, pointInConvexPolygon } from '../engine/hex'
-import { routeEdgePorts } from '../engine/routeGeom'
+import { routeEdgePorts, routeVoidCurvePoints, type XY } from '../engine/routeGeom'
 import type { GameState, PlayerId } from '../engine/types'
 
 const WORLD_HEX_RADIUS = 1
@@ -89,6 +89,40 @@ function drawRoutePort(
   ctx.strokeStyle = 'rgba(15, 17, 23, 0.9)'
   ctx.lineWidth = 0.045
   ctx.stroke()
+}
+
+function strokeWorldPolyline(
+  ctx: CanvasRenderingContext2D,
+  pts: XY[],
+  color: string,
+  lineWidth: number,
+  dash: number[] | null,
+  globalAlpha = 1,
+): void {
+  if (pts.length < 2) return
+  ctx.beginPath()
+  ctx.moveTo(pts[0].x, pts[0].y)
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.setLineDash(dash ?? [])
+  ctx.globalAlpha = globalAlpha
+  ctx.stroke()
+  ctx.globalAlpha = 1
+  ctx.setLineDash([])
+}
+
+function strokeWorldSegment(
+  ctx: CanvasRenderingContext2D,
+  a: XY,
+  b: XY,
+  color: string,
+  lineWidth: number,
+  globalAlpha = 1,
+): void {
+  strokeWorldPolyline(ctx, [a, b], color, lineWidth, null, globalAlpha)
 }
 
 export function GameCanvas({
@@ -200,35 +234,16 @@ export function GameCanvas({
     const routeBoardC = routes.length > 0 ? boardCentroid(game) : null
     if (routeBoardC) {
       const C = routeBoardC
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
       routes.forEach(([ia, ib], idx) => {
         const ta = game.tiles[ia]
         const tb = game.tiles[ib]
         if (!ta || !tb) return
         const st = ROUTE_STYLES[idx % ROUTE_STYLES.length]
-        const ax = ta.center.x
-        const ay = ta.center.y
-        const bx = tb.center.x
-        const by = tb.center.y
-        const { pa, pb } = routeEdgePorts(ax, ay, bx, by, C)
-        ctx.beginPath()
-        ctx.moveTo(pa.x, pa.y)
-        ctx.lineTo(pb.x, pb.y)
-        ctx.strokeStyle = 'rgba(15, 17, 23, 0.92)'
-        ctx.lineWidth = 0.085
-        ctx.setLineDash([0.05, 0.09])
-        ctx.stroke()
-        ctx.beginPath()
-        ctx.moveTo(pa.x, pa.y)
-        ctx.lineTo(pb.x, pb.y)
-        ctx.strokeStyle = st.stroke
-        ctx.lineWidth = 0.048
-        ctx.globalAlpha = 0.88
-        ctx.stroke()
-        ctx.globalAlpha = 1
+        const { pa, pb } = routeEdgePorts(game.tiles, game.tileIds, ia, ib, C)
+        const curve = routeVoidCurvePoints(game.tiles, game.tileIds, pa, pb, C, ia, ib)
+        strokeWorldPolyline(ctx, curve, 'rgba(15, 17, 23, 0.92)', 0.09, [0.042, 0.078])
+        strokeWorldPolyline(ctx, curve, st.stroke, 0.052, [0.042, 0.078], 0.9)
       })
-      ctx.setLineDash([])
     }
 
     const sel = game.battle.selection
@@ -306,7 +321,11 @@ export function GameCanvas({
         const tb = game.tiles[ib]
         if (!ta || !tb) return
         const st = ROUTE_STYLES[idx % ROUTE_STYLES.length]
-        const { pa, pb } = routeEdgePorts(ta.center.x, ta.center.y, tb.center.x, tb.center.y, C)
+        const { pa, pb, innerA, innerB } = routeEdgePorts(game.tiles, game.tileIds, ia, ib, C)
+        strokeWorldSegment(ctx, innerA, pa, 'rgba(15, 17, 23, 0.65)', 0.07)
+        strokeWorldSegment(ctx, innerA, pa, st.stroke, 0.045, 0.95)
+        strokeWorldSegment(ctx, innerB, pb, 'rgba(15, 17, 23, 0.65)', 0.07)
+        strokeWorldSegment(ctx, innerB, pb, st.stroke, 0.045, 0.95)
         drawRoutePort(ctx, pa.x, pa.y, st)
         drawRoutePort(ctx, pb.x, pb.y, st)
       })
