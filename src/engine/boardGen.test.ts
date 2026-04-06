@@ -2,72 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { createRng } from './rng'
 import {
   BOARD_HEX_MIN,
-  MAX_ROUTES_SINGLE_ISLAND,
-  ROUTE_GRAPH_DIST_MAX,
-  ROUTE_GRAPH_DIST_MIN,
   generateBoard,
   validateAdjacencySymmetric,
   validateConnectivity,
   validateCount,
 } from './boardGen'
 
-function bfsGridDist(
-  gridAdj: Record<string, string[]>,
-  a: string,
-  b: string,
-): number {
-  if (a === b) return 0
-  const q: string[] = [a]
-  const dist = new Map<string, number>([[a, 0]])
-  while (q.length) {
-    const u = q.shift()!
-    const d = dist.get(u)!
-    for (const v of gridAdj[u]!) {
-      if (dist.has(v)) continue
-      if (v === b) return d + 1
-      dist.set(v, d + 1)
-      q.push(v)
-    }
-  }
-  return -1
-}
-
 describe('routes', () => {
-  it('single-island: perimeter pairs, grid distance 3–5, symmetric, connected', () => {
+  it('single-island: no routes; grid-only adjacency', () => {
     const rng = createRng(1202)
     const { tiles, tileIds, routes, islandCount } = generateBoard(rng, 40, { islandCount: 1 })
     expect(islandCount).toBe(1)
-    expect(routes.length).toBeGreaterThan(0)
-    expect(routes.length).toBeLessThanOrEqual(MAX_ROUTES_SINGLE_ISLAND)
+    expect(routes).toEqual([])
     expect(validateAdjacencySymmetric(tiles)).toBe(true)
     expect(validateConnectivity(tiles, tileIds, 40)).toBe(true)
-
-    const routeEdge = new Set<string>()
-    for (const [a, b] of routes) {
-      routeEdge.add(`${a}|${b}`)
-      routeEdge.add(`${b}|${a}`)
-    }
-    const gridOnly: Record<string, string[]> = {}
     for (const id of tileIds) {
-      gridOnly[id] = tiles[id].neighbors.filter((n) => !routeEdge.has(`${id}|${n}`))
-    }
-
-    const gridBoundary = tileIds.filter((id) => gridOnly[id]!.length < 6)
-    const seen = new Set<string>()
-    for (const [a, b] of routes) {
-      expect(a).not.toBe(b)
-      expect(gridBoundary.includes(a)).toBe(true)
-      expect(gridBoundary.includes(b)).toBe(true)
-      expect(tileIds.includes(a)).toBe(true)
-      expect(tileIds.includes(b)).toBe(true)
-      expect(tiles[a].neighbors.includes(b)).toBe(true)
-      expect(tiles[b].neighbors.includes(a)).toBe(true)
-      const d = bfsGridDist(gridOnly, a, b)
-      expect(d).toBeGreaterThanOrEqual(ROUTE_GRAPH_DIST_MIN)
-      expect(d).toBeLessThanOrEqual(ROUTE_GRAPH_DIST_MAX)
-      const key = a < b ? `${a}|${b}` : `${b}|${a}`
-      expect(seen.has(key)).toBe(false)
-      seen.add(key)
+      expect(tiles[id].neighbors.length).toBeLessThanOrEqual(6)
     }
   })
 

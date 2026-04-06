@@ -118,7 +118,7 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Routes: matching colors link two edge ports with a dotted line (no crossings). Several islands: only routes between landmasses (each has ≥2). ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). One island: no routes. Two or three islands: colored routes link landmasses in the void (each has ≥2). ↻ new map; Start when ready.',
       }
     : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
 

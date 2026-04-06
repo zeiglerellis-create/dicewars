@@ -49,13 +49,6 @@ export function clampBoardHexCount(n: number): number {
 /** Each landmass needs at least this many hexes when using multiple islands. */
 export const MIN_HEXES_PER_ISLAND = 6
 
-/** Grid steps (before routes) between route endpoints on one landmass. */
-export const ROUTE_GRAPH_DIST_MIN = 3
-export const ROUTE_GRAPH_DIST_MAX = 5
-
-/** One landmass: at most this many routes; perimeter pairs are 3–5 steps apart; dotted segments do not cross. */
-export const MAX_ROUTES_SINGLE_ISLAND = 3
-
 export const DEFAULT_ISLAND_COUNT: IslandCount = 2
 
 export function clampIslandCount(n: number): IslandCount {
@@ -153,23 +146,6 @@ function boundaryHexIds(tiles: Record<string, HexTile>, tileIds: string[]): stri
   return tileIds.filter((id) => tiles[id].neighbors.length < 6)
 }
 
-function bfsGridDist(gridAdj: Record<string, string[]>, a: string, b: string): number {
-  if (a === b) return 0
-  const q: string[] = [a]
-  const dist = new Map<string, number>([[a, 0]])
-  while (q.length) {
-    const u = q.shift()!
-    const d = dist.get(u)!
-    for (const v of gridAdj[u]!) {
-      if (dist.has(v)) continue
-      if (v === b) return d + 1
-      dist.set(v, d + 1)
-      q.push(v)
-    }
-  }
-  return -1
-}
-
 function validateIslandConnected(
   tiles: Record<string, HexTile>,
   tileIds: string[],
@@ -228,46 +204,6 @@ function routeIncidenceByIsland(
     deg[tiles[b].islandIndex]++
   }
   return deg
-}
-
-function placeRoutesSingleIsland(
-  rng: Rng,
-  tiles: Record<string, HexTile>,
-  tileIds: string[],
-  gridAdj: Record<string, string[]>,
-  maxPairs: number,
-): [string, string][] {
-  if (maxPairs <= 0) return []
-  const boundary = boundaryHexIds(tiles, tileIds)
-  const candidates: [string, string][] = []
-  for (let i = 0; i < boundary.length; i++) {
-    for (let j = i + 1; j < boundary.length; j++) {
-      const a = boundary[i]!
-      const b = boundary[j]!
-      if (gridAdj[a].includes(b)) continue
-      const d = bfsGridDist(gridAdj, a, b)
-      if (d < ROUTE_GRAPH_DIST_MIN || d > ROUTE_GRAPH_DIST_MAX) continue
-      candidates.push([a, b])
-    }
-  }
-  shuffleInPlace(rng, candidates)
-  const boardC = boardCentroidFromCenters(tileIds.map((id) => tiles[id].center))
-  const segments: [XY, XY][] = []
-  const used = new Set<string>()
-  const pairs: [string, string][] = []
-  for (const [a, b] of candidates) {
-    if (pairs.length >= maxPairs) break
-    if (used.has(a) || used.has(b)) continue
-    const { pa, pb } = routeEdgePorts(tiles, tileIds, a, b, boardC)
-    if (routeSegmentHitsAny(pa, pb, segments)) continue
-    tiles[a] = { ...tiles[a], neighbors: [...tiles[a].neighbors, b] }
-    tiles[b] = { ...tiles[b], neighbors: [...tiles[b].neighbors, a] }
-    segments.push([pa, pb])
-    used.add(a)
-    used.add(b)
-    pairs.push([a, b])
-  }
-  return pairs
 }
 
 function placeRoutesMultiIsland(
@@ -632,10 +568,7 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       }
     }
 
-    const routes =
-      kEff === 1
-        ? placeRoutesSingleIsland(rng, tiles, tileIds, gridAdj, MAX_ROUTES_SINGLE_ISLAND)
-        : placeRoutesMultiIsland(rng, tiles, tileIds, gridAdj, kEff)
+    const routes = kEff === 1 ? [] : placeRoutesMultiIsland(rng, tiles, tileIds, gridAdj, kEff)
 
     if (!validateAdjacencySymmetric(tiles)) {
       attempt++

@@ -1,7 +1,7 @@
 /** In-game player slot 1 … playerCount (max 8). */
 export type PlayerId = number
 
-/** Disconnected landmasses on one map; linked only by routes when > 1. */
+/** Disconnected landmasses on one map; linked by routes only when using multiple islands. */
 export type IslandCount = 1 | 2 | 3
 
 export const PLAYER_COUNT_MIN = 2
@@ -96,8 +96,8 @@ export interface GameState {
   /** Latest reinforcement +1 for float animation (UI may clear after display) */
   reinforcementPop?: { hexId: string; seq: number }
   /**
-   * Extra adjacency: each pair links two perimeter hexes for movement, attacks, and scoring.
-   * Drawn as edge ports + dotted segments (non-crossing). Generated with the map.
+   * Extra adjacency between landmasses when islandCount > 1. Empty when a single island.
+   * Drawn as coast ports + void curves. Generated with the map.
    */
   routes: [string, string][]
 }
