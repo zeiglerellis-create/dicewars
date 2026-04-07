@@ -8,7 +8,7 @@ import {
 } from './boardGen'
 import { createRng, nextInt, rollD6, type Rng } from './rng'
 import { largestConnectedComponentSize } from './scoring'
-import type { BattleLogEntry, GameState, HexTile, PlayerId } from './types'
+import type { BattleLogEntry, GameState, HexTile, ManualReinforceBatch, PlayerId } from './types'
 import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN } from './types'
 
 function cloneTiles(tiles: Record<string, HexTile>): Record<string, HexTile> {
@@ -28,11 +28,44 @@ function cloneTiles(tiles: Record<string, HexTile>): Record<string, HexTile> {
 /** Dice added in one placement click during phase 1. */
 export const PLACEMENT_DICE_PER_TURN = 5
 
-/** No hex may hold more than this many dice. */
+/** No hex may hold more than this many dice (until stalemate unlimited mode). */
 export const MAX_DICE_PER_HEX = 8
+
+/** Average dice per occupied hex at or above this triggers manual stalemate reinforce (with 2 players left). */
+export const STALEMATE_AVG_DICE_THRESHOLD = 7
 
 export function clampDiceMax(d: number): number {
   return Math.min(MAX_DICE_PER_HEX, d)
+}
+
+/** After stalemate manual mode triggers, dice are not capped at 8. */
+export function maxDicePerHexForState(state: GameState): number {
+  return state.stalemateUnlimitedDice ? 1_000_000 : MAX_DICE_PER_HEX
+}
+
+export function clampDiceForState(state: GameState, d: number): number {
+  const m = maxDicePerHexForState(state)
+  return Math.min(m, Math.max(1, d))
+}
+
+export function activePlayerCount(state: GameState): number {
+  const s = new Set<PlayerId>()
+  for (const id of state.tileIds) s.add(state.tiles[id].owner)
+  return s.size
+}
+
+export function averageDicePerOccupiedHex(state: GameState): number {
+  if (state.tileIds.length === 0) return 0
+  let sum = 0
+  for (const id of state.tileIds) sum += state.tiles[id].dice
+  return sum / state.tileIds.length
+}
+
+/** Two players left and board is “full” enough for manual stalemate reinforce. */
+export function stalemateManualReinforceTrigger(state: GameState): boolean {
+  return (
+    activePlayerCount(state) === 2 && averageDicePerOccupiedHex(state) >= STALEMATE_AVG_DICE_THRESHOLD
+  )
 }
 
 const DEFAULT_PALETTE = [
@@ -141,12 +174,15 @@ export interface CreateGameOptions {
   skipPlacementStart?: boolean
   /** @default 2. Clamped to 1–3; may be reduced at generation time if hex count is too small. */
   islandCount?: number
+  /** @default true. Manual end-of-turn placement when 2 players and avg dice/hex ≥ 7. */
+  manualStalemateReinforce?: boolean
 }
 
 export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOptions): GameState {
   const n = clampBoardHexCount(boardHexCount)
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
   const skipPlacementStart = opts?.skipPlacementStart ?? true
+  const manualStalemateReinforce = opts?.manualStalemateReinforce ?? true
   const islandRequest =
     opts?.islandCount !== undefined ? clampIslandCount(opts.islandCount) : DEFAULT_ISLAND_COUNT
   const rng = createRng(randomSeed32())
@@ -172,6 +208,8 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
     islandCount: board.islandCount,
     playerCount,
     skipPlacementStart,
+    manualStalemateReinforce,
+    stalemateUnlimitedDice: false,
     rngState: rng.state,
     phase: 'PREGAME',
     currentPlayer: 1,
@@ -194,6 +232,10 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
 }
 
 function regenerateBoardAtCurrentSize(state: GameState): string | null {
+  if (state.phase === 'PREGAME') {
+    state.stalemateUnlimitedDice = false
+    state.manualReinforcement = undefined
+  }
   const rng = createRng(randomSeed32())
   const board = generateBoard(rng, state.boardHexCount, {
     growthBias: defaultBoardGrowthBias(),
@@ -260,6 +302,8 @@ export function setPlayerCountPregame(state: GameState, raw: number): string | n
 /** Lock current map and owners; begin placement or battle. */
 export function beginPlacementFromPregame(state: GameState): string | null {
   if (state.phase !== 'PREGAME') return 'Not in setup'
+  state.stalemateUnlimitedDice = false
+  state.manualReinforcement = undefined
   state.battle = {
     subPhase: 'CHOOSING_ATTACK',
     selection: {},
@@ -294,6 +338,72 @@ export function beginPlacementFromPregame(state: GameState): string | null {
 function nextPlayer(state: GameState, p: PlayerId): PlayerId {
   const n = state.playerCount
   return p >= n ? 1 : p + 1
+}
+
+export function setManualStalemateReinforcePregame(state: GameState, enabled: boolean): string | null {
+  if (state.phase !== 'PREGAME') return 'Change this option only during setup'
+  state.manualStalemateReinforce = enabled
+  return null
+}
+
+function applyRandomReinforcementUncapped(state: GameState, player: PlayerId, count: number): void {
+  const owned = state.tileIds.filter((id) => state.tiles[id].owner === player)
+  if (owned.length === 0 || count <= 0) return
+  const rng = attachRng(state)
+  state.tiles = cloneTiles(state.tiles)
+  for (let i = 0; i < count; i++) {
+    const hid = owned[nextInt(rng, 0, owned.length)]!
+    const t = state.tiles[hid]!
+    state.tiles[hid] = { ...t, dice: t.dice + 1 }
+  }
+  syncRng(state, rng)
+}
+
+function finishManualReinforcementTurn(state: GameState, endingPlayer: PlayerId): void {
+  state.manualReinforcement = undefined
+  state.battle.subPhase = 'CHOOSING_ATTACK'
+  state.battle.selection = {}
+  state.currentPlayer = nextPlayer(state, endingPlayer)
+  applyWinIfAny(state)
+}
+
+/** Human: place batch (5/10/all) of remaining end-of-turn dice on an owned hex. */
+export function manualReinforcementPlaceDice(state: GameState, hexId: string): string | null {
+  if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'MANUAL_REINFORCE') return 'Not placing reinforcements'
+  const mr = state.manualReinforcement
+  if (!mr) return 'No manual reinforcement state'
+  const p = mr.endingPlayer
+  if (state.players.isBot[p]) return 'AI handles its own reinforcements'
+  const t = state.tiles[hexId]
+  if (!t || t.owner !== p) return 'Pick one of your hexes'
+  if (mr.remaining <= 0) return 'Nothing left to place'
+
+  let chunk = mr.batchSize === 'all' ? mr.remaining : mr.batchSize
+  chunk = Math.min(chunk, mr.remaining)
+
+  state.tiles = cloneTiles(state.tiles)
+  const nt = state.tiles[hexId]!
+  state.tiles[hexId] = { ...nt, dice: nt.dice + chunk }
+  const nextRem = mr.remaining - chunk
+  state.manualReinforcement = { ...mr, remaining: nextRem }
+  reinforcementPopSeq += 1
+  state.reinforcementPop = { hexId, seq: reinforcementPopSeq }
+
+  if (nextRem <= 0) {
+    finishManualReinforcementTurn(state, p)
+  }
+  return null
+}
+
+export function setManualReinforcementBatchSize(
+  state: GameState,
+  batch: ManualReinforceBatch,
+): string | null {
+  if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'MANUAL_REINFORCE') return 'Not in manual reinforce'
+  const mr = state.manualReinforcement
+  if (!mr) return 'No manual reinforcement state'
+  state.manualReinforcement = { ...mr, batchSize: batch }
+  return null
 }
 
 export function checkWinner(state: GameState): PlayerId | undefined {
@@ -387,7 +497,9 @@ export function battleOutcome(
 }
 
 export function battleSelectAttacker(state: GameState, hexId: string): string | null {
-  if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'CHOOSING_ATTACK') return 'Invalid phase'
+  if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'CHOOSING_ATTACK') {
+    return 'Invalid phase'
+  }
   const t = state.tiles[hexId]
   if (!t || t.owner !== state.currentPlayer) return 'Pick your hex'
   state.battle.selection.selectedAttackerHexId = hexId
@@ -440,14 +552,14 @@ export function battleAttack(state: GameState, defenderHexId: string): string | 
   }
 
   if (out.attackerWins) {
-    state.tiles[atkId] = { ...a, dice: clampDiceMax(out.attackerDiceAfter) }
+    state.tiles[atkId] = { ...a, dice: clampDiceForState(state, out.attackerDiceAfter) }
     state.tiles[defenderHexId] = {
       ...d,
       owner: a.owner,
-      dice: clampDiceMax(out.defenderDiceAfter),
+      dice: clampDiceForState(state, out.defenderDiceAfter),
     }
   } else {
-    state.tiles[atkId] = { ...a, dice: clampDiceMax(out.attackerDiceAfter) }
+    state.tiles[atkId] = { ...a, dice: clampDiceForState(state, out.attackerDiceAfter) }
   }
 
   state.battle.selection.selectedAttackerHexId = undefined
@@ -472,22 +584,53 @@ export function endAttackPhase(state: GameState): string | null {
   state.lastBattleOverlay = undefined
 
   const owned = state.tileIds.filter((id) => state.tiles[id].owner === p)
-  const hexIds: string[] = []
-  if (owned.length > 0 && n > 0) {
-    const rng = attachRng(state)
-    const diceSim: Record<string, number> = {}
-    for (const id of owned) {
-      diceSim[id] = state.tiles[id].dice
-    }
-    for (let i = 0; i < n; i++) {
-      const eligible = owned.filter((id) => diceSim[id] < MAX_DICE_PER_HEX)
-      if (eligible.length === 0) break
-      const hid = eligible[nextInt(rng, 0, eligible.length)]!
-      hexIds.push(hid)
-      diceSim[hid] = diceSim[hid] + 1
-    }
-    syncRng(state, rng)
+
+  if (owned.length === 0 || n <= 0) {
+    state.currentPlayer = nextPlayer(state, p)
+    state.battle.subPhase = 'CHOOSING_ATTACK'
+    state.battle.selection = {}
+    applyWinIfAny(state)
+    return null
   }
+
+  const useManualStalemate =
+    state.manualStalemateReinforce &&
+    stalemateManualReinforceTrigger(state) &&
+    n > 0
+
+  if (useManualStalemate) {
+    state.stalemateUnlimitedDice = true
+    if (!state.players.isBot[p]) {
+      state.battle.subPhase = 'MANUAL_REINFORCE'
+      state.manualReinforcement = {
+        endingPlayer: p,
+        remaining: n,
+        batchSize: 5,
+      }
+      return null
+    }
+    applyRandomReinforcementUncapped(state, p, n)
+    state.currentPlayer = nextPlayer(state, p)
+    state.battle.subPhase = 'CHOOSING_ATTACK'
+    state.battle.selection = {}
+    applyWinIfAny(state)
+    return null
+  }
+
+  const hexIds: string[] = []
+  const rng = attachRng(state)
+  const diceSim: Record<string, number> = {}
+  for (const id of owned) {
+    diceSim[id] = state.tiles[id].dice
+  }
+  for (let i = 0; i < n; i++) {
+    const eligible = owned.filter((id) => diceSim[id] < MAX_DICE_PER_HEX)
+    if (eligible.length === 0) break
+    const hid = eligible[nextInt(rng, 0, eligible.length)]!
+    hexIds.push(hid)
+    diceSim[hid] = diceSim[hid] + 1
+  }
+  syncRng(state, rng)
 
   if (hexIds.length === 0) {
     state.currentPlayer = nextPlayer(state, p)
@@ -514,7 +657,8 @@ export function tickReinforcementAnimation(state: GameState): void {
   const hid = anim.hexIds[anim.appliedCount]
   state.tiles = cloneTiles(state.tiles)
   const d = state.tiles[hid].dice
-  const nextDice = d < MAX_DICE_PER_HEX ? d + 1 : d
+  const cap = maxDicePerHexForState(state)
+  const nextDice = d < cap ? d + 1 : d
   state.tiles[hid] = {
     ...state.tiles[hid],
     dice: nextDice,
@@ -543,6 +687,7 @@ export function resetGame(state: GameState): void {
   const next = createInitialGameState(state.boardHexCount, {
     playerCount: state.playerCount,
     islandCount: state.islandCount,
+    manualStalemateReinforce: state.manualStalemateReinforce,
   })
   Object.assign(state, next)
 }

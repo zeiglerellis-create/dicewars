@@ -2,7 +2,13 @@ import {
   BOARD_HEX_PRESETS,
   type BoardHexPreset,
 } from '../engine/boardGen'
-import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN, type GameState, type IslandCount } from '../engine/types'
+import {
+  PLAYER_COUNT_MAX,
+  PLAYER_COUNT_MIN,
+  type GameState,
+  type IslandCount,
+  type ManualReinforceBatch,
+} from '../engine/types'
 
 export interface BoardChromeProps {
   game: GameState
@@ -11,12 +17,14 @@ export interface BoardChromeProps {
   onSetPlayerCount: (n: number) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
   onSetIslandCount: (n: number) => void
+  onSetManualStalemateReinforce: (enabled: boolean) => void
 }
 
 export interface BoardStatusStripProps {
   game: GameState
   onEndTurn: () => void
   onSkipAiTurns: () => void
+  onSetReinforcementBatchSize: (batch: ManualReinforceBatch) => void
 }
 
 function reinforcementPrompt(game: GameState): { title: string; detail: string } | null {
@@ -26,6 +34,17 @@ function reinforcementPrompt(game: GameState): { title: string; detail: string }
   return {
     title: 'Reinforcing',
     detail: `End-of-turn dice — +1 only on hexes below max (${anim.appliedCount}/${total}); none if every tile is full.`,
+  }
+}
+
+function manualReinforcePrompt(game: GameState): { title: string; detail: string } | null {
+  if (game.phase !== 'BATTLE' || game.battle.subPhase !== 'MANUAL_REINFORCE') return null
+  const mr = game.manualReinforcement
+  if (!mr) return null
+  const b = mr.batchSize === 'all' ? 'All' : String(mr.batchSize)
+  return {
+    title: `Place reinforcements · ${mr.remaining} left`,
+    detail: `Batch size: ${b} per tap on your hexes (5, 10, or all remaining). Stacks may exceed 8.`,
   }
 }
 
@@ -99,8 +118,14 @@ function IconSkipAi() {
 }
 
 /** Fixed-height strip below the board: directions + turn icon actions. */
-export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatusStripProps) {
+export function BoardStatusStrip({
+  game,
+  onEndTurn,
+  onSkipAiTurns,
+  onSetReinforcementBatchSize,
+}: BoardStatusStripProps) {
   const p = game.currentPlayer
+  const manualReinforce = game.phase === 'BATTLE' && game.battle.subPhase === 'MANUAL_REINFORCE'
   const canEndTurn =
     game.phase === 'BATTLE' &&
     game.battle.subPhase === 'CHOOSING_ATTACK' &&
@@ -110,7 +135,8 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
   const showSkipAi =
     (game.phase === 'PLACEMENT' || game.phase === 'BATTLE') &&
     game.players.isBot[p] &&
-    !game.reinforcementAnimation
+    !game.reinforcementAnimation &&
+    !manualReinforce
 
   const pregame = game.phase === 'PREGAME'
 
@@ -118,11 +144,18 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). One island: no routes. Two or three islands: colored routes link landmasses in the void (each has ≥2). ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Optional manual stalemate reinforce when 2 players remain and the board averages ≥7 dice per hex. One island: no routes. Two or three islands: colored routes link landmasses in the void (each has ≥2). ↻ new map; Start when ready.',
       }
-    : reinforcementPrompt(game) ?? placementPrompt(game) ?? battlePrompt(game)
+    : manualReinforcePrompt(game) ??
+      reinforcementPrompt(game) ??
+      placementPrompt(game) ??
+      battlePrompt(game)
 
-  const showPromptActions = !pregame && (showSkipAi || canEndTurn)
+  const mr = game.manualReinforcement
+  const showBatch =
+    manualReinforce && mr && !game.players.isBot[p]
+
+  const showPromptActions = !pregame && (showSkipAi || canEndTurn || showBatch)
 
   if (!prompt) return null
 
@@ -135,6 +168,27 @@ export function BoardStatusStrip({ game, onEndTurn, onSkipAiTurns }: BoardStatus
         </div>
         {showPromptActions && (
           <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
+            {showBatch && mr && (
+              <div className="dw-reinforce-batch" role="group" aria-label="Dice per tap">
+                {([5, 10, 'all'] as const).map((key) => {
+                  const active =
+                    key === 'all' ? mr.batchSize === 'all' : mr.batchSize === key
+                  const label = key === 'all' ? 'All' : `+${key}`
+                  return (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      className={
+                        'dw-reinforce-batch-btn' + (active ? ' dw-reinforce-batch-btn--active' : '')
+                      }
+                      onClick={() => onSetReinforcementBatchSize(key)}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             {showSkipAi && (
               <button
                 type="button"
@@ -171,6 +225,7 @@ export function BoardChrome({
   onSetPlayerCount,
   onSetBoardHexPreset,
   onSetIslandCount,
+  onSetManualStalemateReinforce,
 }: BoardChromeProps) {
   const pregame = game.phase === 'PREGAME'
 
@@ -219,6 +274,22 @@ export function BoardChrome({
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="dw-setup-field dw-setup-field--checkbox">
+              <label className="dw-setup-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={game.manualStalemateReinforce}
+                  onChange={(e) => onSetManualStalemateReinforce(e.target.checked)}
+                />
+                <span>
+                  Manual stalemate reinforce
+                  <span className="dw-setup-checkbox-hint">
+                    2 players left, avg ≥7 dice/hex — place 5 / 10 / all per tap; stacks can exceed 8.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div className="dw-setup-field">

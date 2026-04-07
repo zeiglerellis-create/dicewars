@@ -6,16 +6,20 @@ import {
   runBotPlacement,
 } from './engine/bots'
 import type { BoardHexPreset } from './engine/boardGen'
+import type { ManualReinforceBatch } from './engine/types'
 import {
   battleAttack,
   battleSelectAttacker,
   beginPlacementFromPregame,
   createInitialGameState,
   endAttackPhase,
+  manualReinforcementPlaceDice,
   placementClick,
   randomizeBoardPregame,
   setBoardHexCountPregame,
   setIslandCountPregame,
+  setManualReinforcementBatchSize,
+  setManualStalemateReinforcePregame,
   setPlayerCountPregame,
   tickReinforcementAnimation,
 } from './engine/rules'
@@ -47,6 +51,8 @@ export default function App() {
       let err: string | null = null
       if (s.phase === 'PLACEMENT') {
         err = placementClick(s, hexId)
+      } else if (s.phase === 'BATTLE' && s.battle.subPhase === 'MANUAL_REINFORCE') {
+        err = manualReinforcementPlaceDice(s, hexId)
       } else if (s.phase === 'BATTLE' && s.battle.subPhase === 'CHOOSING_ATTACK') {
         const t = s.tiles[hexId]
         if (!t) return prev
@@ -75,6 +81,7 @@ export default function App() {
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
+        manualStalemateReinforce: prev.manualStalemateReinforce,
       }),
     )
     setError(null)
@@ -109,6 +116,26 @@ export default function App() {
       return s
     })
   }, [])
+
+  const onSetManualStalemateReinforce = useCallback((enabled: boolean) => {
+    setError(null)
+    setGame((prev) => {
+      const s = structuredClone(prev)
+      const err = setManualStalemateReinforcePregame(s, enabled)
+      if (err) queueMicrotask(() => setError(err))
+      return s
+    })
+  }, [])
+
+  const onSetReinforcementBatchSize = useCallback((batch: ManualReinforceBatch) => {
+      setError(null)
+      setGame((prev) => {
+        const s = structuredClone(prev)
+        const err = setManualReinforcementBatchSize(s, batch)
+        if (err) queueMicrotask(() => setError(err))
+        return s
+      })
+    }, [])
 
   const onRandomizeBoard = useCallback(() => {
     setError(null)
@@ -206,6 +233,7 @@ export default function App() {
       createInitialGameState(prev.boardHexCount, {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
+        manualStalemateReinforce: prev.manualStalemateReinforce,
       }),
     )
     setError(null)
@@ -231,9 +259,15 @@ export default function App() {
             onSetPlayerCount={onSetPlayerCount}
             onSetBoardHexPreset={onSetBoardHexPreset}
             onSetIslandCount={onSetIslandCount}
+            onSetManualStalemateReinforce={onSetManualStalemateReinforce}
           />
         </div>
-        <BoardStatusStrip game={game} onEndTurn={onEndTurn} onSkipAiTurns={onSkipAiTurns} />
+        <BoardStatusStrip
+          game={game}
+          onEndTurn={onEndTurn}
+          onSkipAiTurns={onSkipAiTurns}
+          onSetReinforcementBatchSize={onSetReinforcementBatchSize}
+        />
       </div>
 
       {game.phase === 'GAME_OVER' && game.winner !== undefined && (

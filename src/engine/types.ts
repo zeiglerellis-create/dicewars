@@ -24,7 +24,10 @@ export interface HexTile {
 }
 
 export type Phase = 'PREGAME' | 'PLACEMENT' | 'BATTLE' | 'GAME_OVER'
-export type BattleSubPhase = 'CHOOSING_ATTACK'
+export type BattleSubPhase = 'CHOOSING_ATTACK' | 'MANUAL_REINFORCE'
+
+/** Batch size when placing end-of-turn dice in manual stalemate mode. */
+export type ManualReinforceBatch = 5 | 10 | 'all'
 
 export interface BattleLogEntry {
   id: string
@@ -68,6 +71,17 @@ export interface GameState {
    * spread randomly across their tiles (still max 8 per hex). Skips placement phase.
    */
   skipPlacementStart: boolean
+  /**
+   * When true (default), end-of-turn reinforcements become **manual** (pick hex + batch 5/10/all)
+   * once **two players** remain and **average dice per hex ≥ 7**; hexes may exceed 8 in that phase.
+   * Toggle in pre-game setup.
+   */
+  manualStalemateReinforce: boolean
+  /**
+   * Once manual stalemate reinforce has triggered, battle/placement caps use unlimited stacking
+   * for the rest of the match (latched).
+   */
+  stalemateUnlimitedDice: boolean
   rngState: number
   phase: Phase
   currentPlayer: PlayerId
@@ -75,6 +89,12 @@ export interface GameState {
   tileIds: string[]
   placement: PlacementState
   battle: BattleUiState
+  /** Active while human places end-of-turn dice in stalemate manual mode. */
+  manualReinforcement?: {
+    endingPlayer: PlayerId
+    remaining: number
+    batchSize: ManualReinforceBatch
+  }
   players: {
     colors: Record<PlayerId, string>
     isBot: Record<PlayerId, boolean>

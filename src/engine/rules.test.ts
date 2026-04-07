@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { battleOutcome } from './rules'
+import { battleOutcome, stalemateManualReinforceTrigger } from './rules'
+import type { GameState, PlayerId } from './types'
+
+function minimalTiles(
+  ownersAndDice: { owner: PlayerId; dice: number }[],
+): { tiles: GameState['tiles']; tileIds: string[] } {
+  const tiles: GameState['tiles'] = {}
+  const tileIds: string[] = []
+  ownersAndDice.forEach((o, i) => {
+    const id = `h${i}`
+    tileIds.push(id)
+    tiles[id] = {
+      id,
+      coord: { q: i, r: 0 },
+      islandIndex: 0,
+      neighbors: [],
+      owner: o.owner,
+      dice: o.dice,
+      center: { x: i, y: 0 },
+    }
+  })
+  return { tiles, tileIds }
+}
 
 describe('battleOutcome', () => {
   it('on win: attacker becomes 1, defender dice = old attacker - 1', () => {
@@ -34,5 +56,42 @@ describe('battleOutcome', () => {
         expect(lose.defenderDiceAfter).toBeGreaterThanOrEqual(1)
       }
     }
+  })
+})
+
+describe('stalemateManualReinforceTrigger', () => {
+  it('is true with 2 players and average dice >= 7', () => {
+    const { tiles, tileIds } = minimalTiles([
+      { owner: 1, dice: 8 },
+      { owner: 1, dice: 8 },
+      { owner: 2, dice: 8 },
+      { owner: 2, dice: 6 },
+    ])
+    const state = {
+      tileIds,
+      tiles,
+    } as Pick<GameState, 'tileIds' | 'tiles'>
+    expect(stalemateManualReinforceTrigger(state as GameState)).toBe(true)
+  })
+
+  it('is false with 3 players', () => {
+    const { tiles, tileIds } = minimalTiles([
+      { owner: 1, dice: 8 },
+      { owner: 2, dice: 8 },
+      { owner: 3, dice: 8 },
+    ])
+    const state = { tileIds, tiles } as Pick<GameState, 'tileIds' | 'tiles'>
+    expect(stalemateManualReinforceTrigger(state as GameState)).toBe(false)
+  })
+
+  it('is false when average below 7', () => {
+    const { tiles, tileIds } = minimalTiles([
+      { owner: 1, dice: 6 },
+      { owner: 1, dice: 6 },
+      { owner: 2, dice: 6 },
+      { owner: 2, dice: 6 },
+    ])
+    const state = { tileIds, tiles } as Pick<GameState, 'tileIds' | 'tiles'>
+    expect(stalemateManualReinforceTrigger(state as GameState)).toBe(false)
   })
 })

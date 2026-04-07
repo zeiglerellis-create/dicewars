@@ -249,6 +249,10 @@ export function GameCanvas({
     const sel = game.battle.selection
     const p = game.currentPlayer
     const humanPlacing = game.phase === 'PLACEMENT' && !game.players.isBot[p]
+    const humanManualReinforce =
+      game.phase === 'BATTLE' &&
+      game.battle.subPhase === 'MANUAL_REINFORCE' &&
+      !game.players.isBot[p]
 
     const pickingDefender =
       game.phase === 'BATTLE' &&
@@ -275,7 +279,8 @@ export function GameCanvas({
       const corners = hexCorners(x, y, WORLD_HEX_RADIUS)
       const isHover = id === hoveredHexId
       const isSel = id === sel.selectedAttackerHexId || id === sel.selectedDefenderHexId
-      const isYourPlacementHex = humanPlacing && t.owner === p
+      const isYourPlacementHex =
+        (humanPlacing || humanManualReinforce) && t.owner === p && game.currentPlayer === p
 
       const isAttackerPick = id === sel.selectedAttackerHexId
       const isValidDefender = attackableHexIds?.has(id) ?? false
@@ -307,7 +312,9 @@ export function GameCanvas({
 
       ctx.fillStyle = diceLabelColor(t.owner)
       ctx.globalAlpha = dimHex ? (isHover ? 0.5 : 0.34) : 1
-      ctx.font = 'bold 0.55px system-ui,sans-serif'
+      const diceFont =
+        t.dice > 99 ? 'bold 0.34px' : t.dice > 9 ? 'bold 0.44px' : 'bold 0.55px'
+      ctx.font = `${diceFont} system-ui,sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(t.dice), x, y)
@@ -391,12 +398,20 @@ export function GameCanvas({
     return game.tiles[id].owner === game.currentPlayer
   }
 
+  const manualReinforcePick =
+    game.phase === 'BATTLE' &&
+    game.battle.subPhase === 'MANUAL_REINFORCE' &&
+    hoveredHexId &&
+    game.tiles[hoveredHexId]?.owner === game.currentPlayer
+
   const cursor =
     game.phase === 'PLACEMENT' && hoveredHexId && selectablePlacement(hoveredHexId)
       ? 'pointer'
-      : game.phase === 'BATTLE' && hoveredHexId
+      : manualReinforcePick
         ? 'pointer'
-        : 'default'
+        : game.phase === 'BATTLE' && game.battle.subPhase === 'CHOOSING_ATTACK' && hoveredHexId
+          ? 'pointer'
+          : 'default'
 
   return (
     <canvas

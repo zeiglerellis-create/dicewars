@@ -2,12 +2,13 @@
 
 import {
   AXIAL_DIRS,
+  axialToPixel,
   coordKey,
   hexCorners,
   hexEdgePortBoardOutside,
   pointInConvexPolygon,
 } from './hex'
-import type { HexTile } from './types'
+import type { HexCoord, HexTile } from './types'
 
 export interface XY {
   x: number
@@ -25,7 +26,10 @@ export interface RouteEndpoints {
 export const ROUTE_HEX_RIM = 0.98
 
 /** Port sits this far past the coast edge midpoint into the void. */
-export const ROUTE_PORT_OUTSET = 0.13
+export const ROUTE_PORT_OUTSET = 0.14
+
+/** Step size when nudging a port until it lies outside every land hex. */
+const PORT_VOID_NUDGE = 0.048
 
 /** Point inside the tile toward the coast — stub line makes ownership obvious. */
 export const ROUTE_INNER_ANCHOR_INSET = 0.52
@@ -52,11 +56,88 @@ function occupiedCoordKeys(tileIds: string[], tiles: Record<string, HexTile>): S
   return s
 }
 
+function unitVec(v: XY): XY {
+  const l = Math.hypot(v.x, v.y) || 1
+  return { x: v.x / l, y: v.y / l }
+}
+
+/** Unit vector in layout space from `coord` toward `coord + d` (void or land). */
+function axialDirWorld(coord: HexCoord, d: HexCoord): XY {
+  const a = axialToPixel(coord, 1)
+  const b = axialToPixel({ q: coord.q + d.q, r: coord.r + d.r }, 1)
+  return unitVec({ x: b.x - a.x, y: b.y - a.y })
+}
+
+/**
+ * Edge index whose midpoint best faces the given unit direction (for matching axial void side to geometry).
+ */
+function edgeIndexFacingDir(
+  cx: number,
+  cy: number,
+  corners: { x: number; y: number }[],
+  dir: XY,
+): number {
+  let best = 0
+  let bestDot = -2
+  for (let ei = 0; ei < 6; ei++) {
+    const mx = (corners[ei]!.x + corners[(ei + 1) % 6]!.x) / 2
+    const my = (corners[ei]!.y + corners[(ei + 1) % 6]!.y) / 2
+    const u = unitVec({ x: mx - cx, y: my - cy })
+    const dot = u.x * dir.x + u.y * dir.y
+    if (dot > bestDot) {
+      bestDot = dot
+      best = ei
+    }
+  }
+  return best
+}
+
+function edgeMidOutward(
+  cx: number,
+  cy: number,
+  corners: { x: number; y: number }[],
+  ei: number,
+): { mid: XY; out: XY } {
+  const mx = (corners[ei]!.x + corners[(ei + 1) % 6]!.x) / 2
+  const my = (corners[ei]!.y + corners[(ei + 1) % 6]!.y) / 2
+  const out = unitVec({ x: mx - cx, y: my - cy })
+  return { mid: { x: mx, y: my }, out }
+}
+
+/**
+ * Push `port` along `outward` until it is not inside any land hex (same inset as drawing).
+ */
+function nudgePortOutsideAllLand(
+  port: XY,
+  outward: XY,
+  tiles: Record<string, HexTile>,
+  tileIds: string[],
+  hexHitR: number,
+): XY {
+  let p = { ...port }
+  for (let step = 0; step < 36; step++) {
+    let inside = false
+    for (const hid of tileIds) {
+      const t = tiles[hid]
+      if (pointInConvexPolygon(p.x, p.y, hexCorners(t.center.x, t.center.y, hexHitR))) {
+        inside = true
+        break
+      }
+    }
+    if (!inside) return p
+    p = { x: p.x + outward.x * PORT_VOID_NUDGE, y: p.y + outward.y * PORT_VOID_NUDGE }
+  }
+  return p
+}
+
 /**
  * Coast edge of `id` that best faces `towardX/towardY`, with port in the void and inner anchor on land.
+ * Axial “empty neighbor” directions are matched to the **geometric** hex edge via layout vectors (corner
+ * index ≠ axial index on pointy-top hexes — mixing them placed ports on inland edges).
  */
 function coastPortAndInner(
   tiles: Record<string, HexTile>,
+  tileIds: string[],
   occupied: Set<string>,
   id: string,
   towardX: number,
@@ -80,36 +161,39 @@ function coastPortAndInner(
   let bestMid = { x: cx, y: cy }
   let bestOut = { x: tx, y: ty }
 
-  for (let i = 0; i < 6; i++) {
-    const d = AXIAL_DIRS[i]!
+  for (let di = 0; di < 6; di++) {
+    const d = AXIAL_DIRS[di]!
     const nk = coordKey(t.coord.q + d.q, t.coord.r + d.r)
     if (occupied.has(nk)) continue
 
-    const mx = (corners[i]!.x + corners[(i + 1) % 6]!.x) / 2
-    const my = (corners[i]!.y + corners[(i + 1) % 6]!.y) / 2
-    const ox = mx - cx
-    const oy = my - cy
-    const ol = Math.hypot(ox, oy) || 1
-    const ux = ox / ol
-    const uy = oy / ol
-    const score = ux * tx + uy * ty
+    const dirVoid = axialDirWorld(t.coord, d)
+    const ei = edgeIndexFacingDir(cx, cy, corners, dirVoid)
+    const { mid, out } = edgeMidOutward(cx, cy, corners, ei)
+    const score = out.x * tx + out.y * ty
     if (score > bestScore) {
       bestScore = score
-      bestMid = { x: mx, y: my }
-      bestOut = { x: ux, y: uy }
+      bestMid = mid
+      bestOut = out
     }
   }
 
   if (bestScore < -0.95) return null
 
-  const port = {
+  let port = {
     x: bestMid.x + bestOut.x * portOutset,
     y: bestMid.y + bestOut.y * portOutset,
   }
-  const inner = {
+  port = nudgePortOutsideAllLand(port, bestOut, tiles, tileIds, hexR * 0.97)
+
+  const innerRaw = {
     x: cx + bestOut.x * innerInset,
     y: cy + bestOut.y * innerInset,
   }
+  const innerHull = hexCorners(cx, cy, hexR * 0.9)
+  const inner = pointInConvexPolygon(innerRaw.x, innerRaw.y, innerHull)
+    ? innerRaw
+    : { x: cx + bestOut.x * 0.36, y: cy + bestOut.y * 0.36 }
+
   return { port, inner }
 }
 
@@ -165,8 +249,8 @@ export function routeEdgePorts(
     throw new Error('routeEdgePorts: unknown tile id')
   }
 
-  const a = coastPortAndInner(tiles, occ, idA, tB.center.x, tB.center.y, hexR, portOutset, innerInset)
-  const b = coastPortAndInner(tiles, occ, idB, tA.center.x, tA.center.y, hexR, portOutset, innerInset)
+  const a = coastPortAndInner(tiles, tileIds, occ, idA, tB.center.x, tB.center.y, hexR, portOutset, innerInset)
+  const b = coastPortAndInner(tiles, tileIds, occ, idB, tA.center.x, tA.center.y, hexR, portOutset, innerInset)
 
   if (!a || !b) {
     return routeEndpointsBoardCentroid(
