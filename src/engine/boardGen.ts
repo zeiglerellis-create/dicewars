@@ -220,7 +220,24 @@ function growRectangularHexCoords(
   return out.size === target ? out : null
 }
 
-/** Remove hexes (lake voids) while keeping one connected landmass. */
+function keysRemovablePreservingConnectivity(m: Map<string, HexCoord>): string[] {
+  return [...m.keys()].filter((k) => {
+    const next = new Map(m)
+    next.delete(k)
+    return isConnectedHexCoordMap(next)
+  })
+}
+
+function isStrictInteriorHex(k: string, m: Map<string, HexCoord>): boolean {
+  const c = m.get(k)!
+  return axialNeighbors(c).every((n) => m.has(coordKey(n.q, n.r)))
+}
+
+/**
+ * Remove hexes (lake voids) while keeping one connected landmass.
+ * Prefers expanding from existing void (irregular blobs, tendrils) with occasional interior seeds
+ * so lakes are multi-hex “puddles” rather than scattered single tiles.
+ */
 function carveInteriorLakes(
   rng: Rng,
   coordMap: Map<string, HexCoord>,
@@ -228,24 +245,34 @@ function carveInteriorLakes(
 ): Map<string, HexCoord> | null {
   if (removeCount <= 0) return coordMap
   const m = new Map(coordMap)
+  const removedVoid = new Set<string>()
   let removed = 0
   let guard = 0
-  const maxGuard = removeCount * 120 + 400
+  const maxGuard = removeCount * 200 + 800
   while (removed < removeCount && guard < maxGuard) {
     guard++
-    const candidates = [...m.keys()].filter((k) => {
-      const next = new Map(m)
-      next.delete(k)
-      return isConnectedHexCoordMap(next)
-    })
-    if (candidates.length === 0) return null
-    const interior = candidates.filter((k) => {
+    const removable = keysRemovablePreservingConnectivity(m)
+    if (removable.length === 0) return null
+
+    const frontier = removable.filter((k) => {
       const c = m.get(k)!
-      return axialNeighbors(c).every((n) => m.has(coordKey(n.q, n.r)))
+      return axialNeighbors(c).some((n) => removedVoid.has(coordKey(n.q, n.r)))
     })
-    const pool = interior.length > 0 ? interior : candidates
+    const strictInterior = removable.filter((k) => isStrictInteriorHex(k, m))
+
+    const roll = nextFloat(rng)
+    let pool: string[]
+    if (frontier.length > 0 && roll < 0.76) {
+      pool = frontier
+    } else if (strictInterior.length > 0 && roll < 0.93) {
+      pool = strictInterior
+    } else {
+      pool = removable
+    }
+
     const pick = pool[nextInt(rng, 0, pool.length)]!
     m.delete(pick)
+    removedVoid.add(pick)
     removed++
   }
   return removed === removeCount ? m : null
@@ -676,9 +703,18 @@ export interface GenerateBoardOptions {
 }
 
 const LAKE_MIN_TARGET = 36
-const LAKE_FR = 0.07
-const LAKE_MIN_REM = 3
-const LAKE_MAX_REM = 24
+/** Slightly above 10% land — typical lake budget lower bound. */
+const LAKE_FR_LO = 0.102
+/** Never carve more than 15% of final land hexes. */
+const LAKE_FR_HI = 0.15
+
+function lakeRemovalBudget(rng: Rng, targetLand: number): number {
+  const hi = Math.floor(targetLand * LAKE_FR_HI)
+  const lo = Math.max(4, Math.ceil(targetLand * LAKE_FR_LO))
+  if (hi < 1) return 0
+  if (lo > hi) return hi
+  return nextInt(rng, lo, hi + 1)
+}
 
 export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOptions): GeneratedBoard {
   const growthBias = opts?.growthBias ?? 'landscape'
@@ -703,7 +739,7 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       let lakeRemove = 0
       const useLakes = (opts?.lakes !== false) && target >= LAKE_MIN_TARGET
       if (useLakes) {
-        lakeRemove = Math.min(LAKE_MAX_REM, Math.max(LAKE_MIN_REM, Math.floor(target * LAKE_FR)))
+        lakeRemove = lakeRemovalBudget(rng, target)
       }
       const growTarget = target + lakeRemove
       const rectMap = growRectangularHexCoords(rng, growTarget, growthBias)
@@ -728,7 +764,7 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       let lakeRemove = 0
       const useLakes = (opts?.lakes !== false) && target >= LAKE_MIN_TARGET
       if (useLakes) {
-        lakeRemove = Math.min(LAKE_MAX_REM, Math.max(LAKE_MIN_REM, Math.floor(target * LAKE_FR)))
+        lakeRemove = lakeRemovalBudget(rng, target)
         growTarget = target + lakeRemove
       }
       coordMap = growBlobCoords(rng, growTarget, growthBias)

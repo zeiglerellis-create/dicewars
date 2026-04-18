@@ -10,7 +10,6 @@ import {
 
 export interface BoardChromeProps {
   game: GameState
-  onRandomizeBoard: () => void
   onSetPlayerCount: (n: number) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
   onSetIslandCount: (n: number) => void
@@ -24,6 +23,7 @@ export interface BoardStatusStripProps {
   onSetReinforcementBatchSize: (batch: ManualReinforceBatch) => void
   /** Shown in the turn-actions slot during PREGAME (same column as Skip / End turn). */
   onPregameStart?: () => void
+  onPregameRandomize?: () => void
 }
 
 function reinforcementPrompt(game: GameState): { title: string; detail: string } | null {
@@ -124,6 +124,7 @@ export function BoardStatusStrip({
   onSkipAiTurns,
   onSetReinforcementBatchSize,
   onPregameStart,
+  onPregameRandomize,
 }: BoardStatusStripProps) {
   const p = game.currentPlayer
   const manualReinforce = game.phase === 'BATTLE' && game.battle.subPhase === 'MANUAL_REINFORCE'
@@ -140,13 +141,13 @@ export function BoardStatusStrip({
     !manualReinforce
 
   const pregame = game.phase === 'PREGAME'
-  const showPregameStart = pregame && onPregameStart
+  const showPregameActions = pregame && onPregameStart && onPregameRandomize
 
   const prompt = pregame
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          '⟳ above randomizes the map. Open “Map & players” for islands, size, and options.',
+          '⟳ randomizes the map. Open “Map & players” for islands, size, and options.',
       }
     : manualReinforcePrompt(game) ??
       reinforcementPrompt(game) ??
@@ -158,7 +159,7 @@ export function BoardStatusStrip({
     manualReinforce && mr && !game.players.isBot[p]
 
   const showPromptActions =
-    showPregameStart || (!pregame && (showSkipAi || canEndTurn || showBatch))
+    showPregameActions || (!pregame && (showSkipAi || canEndTurn || showBatch))
 
   if (!prompt) return null
 
@@ -171,15 +172,43 @@ export function BoardStatusStrip({
         </div>
         {showPromptActions && (
           <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
-            {showPregameStart && onPregameStart && (
-              <button
-                type="button"
-                className="dw-board-pregame-start-btn"
-                onClick={onPregameStart}
-                title="Start game"
-              >
-                Start game
-              </button>
+            {showPregameActions && onPregameRandomize && onPregameStart && (
+              <div className="dw-board-pregame-cluster" role="group" aria-label="Map and start">
+                <button
+                  type="button"
+                  className="dw-float-refresh dw-board-pregame-refresh"
+                  onClick={onPregameRandomize}
+                  aria-label="New random map"
+                  title="New random map"
+                >
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 21h5v-5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="dw-board-pregame-start-btn"
+                  onClick={onPregameStart}
+                  title="Start game"
+                  aria-label="Start game"
+                >
+                  <span className="dw-board-pregame-start-word">Start</span>
+                  <span className="dw-board-pregame-start-word dw-board-pregame-start-word--sub">game</span>
+                </button>
+              </div>
             )}
             {showBatch && mr && (
               <div className="dw-reinforce-batch" role="group" aria-label="Dice per tap">
@@ -233,7 +262,6 @@ export function BoardStatusStrip({
 
 export function BoardChrome({
   game,
-  onRandomizeBoard,
   onSetPlayerCount,
   onSetBoardHexPreset,
   onSetIslandCount,
@@ -245,33 +273,6 @@ export function BoardChrome({
     <>
       {pregame && (
         <>
-          <div className="dw-board-refresh-top">
-            <button
-              type="button"
-              className="dw-float-refresh"
-              onClick={onRandomizeBoard}
-              aria-label="New random map"
-              title="New random map"
-            >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                aria-hidden
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                <path d="M16 21h5v-5" />
-              </svg>
-            </button>
-          </div>
-
           <div className="dw-board-float dw-board-float--setup-drawer">
             <details className="dw-setup-drawer">
               <summary className="dw-setup-drawer-summary">Map & players</summary>

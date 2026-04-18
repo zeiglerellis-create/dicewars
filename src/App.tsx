@@ -311,7 +311,6 @@ export default function App() {
           />
           <BoardChrome
             game={game}
-            onRandomizeBoard={onRandomizeBoard}
             onSetPlayerCount={onSetPlayerCount}
             onSetBoardHexPreset={onSetBoardHexPreset}
             onSetIslandCount={onSetIslandCount}
@@ -324,6 +323,7 @@ export default function App() {
           onSkipAiTurns={onSkipAiTurns}
           onSetReinforcementBatchSize={onSetReinforcementBatchSize}
           onPregameStart={onStartGame}
+          onPregameRandomize={onRandomizeBoard}
         />
       </div>
 
