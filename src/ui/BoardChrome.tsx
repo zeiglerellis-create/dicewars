@@ -147,7 +147,7 @@ export function BoardStatusStrip({
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Refresh randomizes the board. Open “Map & players” for islands, size, and options.',
+          'New Map randomizes the board. Open “Map & players” for islands, size, and options.',
       }
     : manualReinforcePrompt(game) ??
       reinforcementPrompt(game) ??
@@ -173,26 +173,26 @@ export function BoardStatusStrip({
         {showPromptActions && (
           <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
             {showPregameActions && onPregameRandomize && onPregameStart && (
-              <div className="dw-board-pregame-cluster" role="group" aria-label="Map and start">
+              <div className="dw-board-pregame-cluster" role="group" aria-label="New map and start game">
                 <button
                   type="button"
                   className="dw-board-pregame-btn dw-board-pregame-btn--secondary"
                   onClick={onPregameRandomize}
                   aria-label="New random map"
-                  title="New random map"
+                  title="New Map"
                 >
-                  <span className="dw-board-pregame-line">Re</span>
-                  <span className="dw-board-pregame-line">fresh</span>
+                  <span className="dw-board-pregame-line">New</span>
+                  <span className="dw-board-pregame-line">Map</span>
                 </button>
                 <button
                   type="button"
                   className="dw-board-pregame-btn dw-board-pregame-btn--primary"
                   onClick={onPregameStart}
-                  title="Start game"
-                  aria-label="Start game"
+                  title="Start Game"
+                  aria-label="Start Game"
                 >
                   <span className="dw-board-pregame-line">Start</span>
-                  <span className="dw-board-pregame-line">game</span>
+                  <span className="dw-board-pregame-line">Game</span>
                 </button>
               </div>
             )}
