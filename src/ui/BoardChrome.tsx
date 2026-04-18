@@ -147,7 +147,7 @@ export function BoardStatusStrip({
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          '⟳ randomizes the map. Open “Map & players” for islands, size, and options.',
+          'Refresh randomizes the board. Open “Map & players” for islands, size, and options.',
       }
     : manualReinforcePrompt(game) ??
       reinforcementPrompt(game) ??
@@ -176,37 +176,23 @@ export function BoardStatusStrip({
               <div className="dw-board-pregame-cluster" role="group" aria-label="Map and start">
                 <button
                   type="button"
-                  className="dw-float-refresh dw-board-pregame-refresh"
+                  className="dw-board-pregame-btn dw-board-pregame-btn--secondary"
                   onClick={onPregameRandomize}
                   aria-label="New random map"
                   title="New random map"
                 >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    aria-hidden
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                    <path d="M16 21h5v-5" />
-                  </svg>
+                  <span className="dw-board-pregame-line">Re</span>
+                  <span className="dw-board-pregame-line">fresh</span>
                 </button>
                 <button
                   type="button"
-                  className="dw-board-pregame-start-btn"
+                  className="dw-board-pregame-btn dw-board-pregame-btn--primary"
                   onClick={onPregameStart}
                   title="Start game"
                   aria-label="Start game"
                 >
-                  <span className="dw-board-pregame-start-word">Start</span>
-                  <span className="dw-board-pregame-start-word dw-board-pregame-start-word--sub">game</span>
+                  <span className="dw-board-pregame-line">Start</span>
+                  <span className="dw-board-pregame-line">game</span>
                 </button>
               </div>
             )}
