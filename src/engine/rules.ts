@@ -236,6 +236,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
   const board = generateBoard(rng, n, {
     growthBias: defaultBoardGrowthBias(),
     islandCount: islandRequest,
+    ...(preset === 'full' ? { layout: 'rect' as const, lakes: false } : {}),
   })
   assignRandomOwners(rng, board.tiles, board.tileIds, playerCount)
 
@@ -304,6 +305,7 @@ function regenerateBoardAtCurrentSize(state: GameState): string | null {
   const board = generateBoard(rng, n, {
     growthBias: defaultBoardGrowthBias(),
     islandCount: state.islandCount,
+    ...(state.boardHexPreset === 'full' ? { layout: 'rect' as const, lakes: false } : {}),
   })
   assignRandomOwners(rng, board.tiles, board.tileIds, state.playerCount)
   state.tiles = board.tiles

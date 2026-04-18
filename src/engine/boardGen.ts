@@ -98,6 +98,127 @@ function isConnectedHexCoordMap(coordMap: Map<string, HexCoord>): boolean {
   return seen.size === coordMap.size
 }
 
+/** halfW / halfH for landscape (wide board); portrait inverts. */
+const RECT_LANDSCAPE_HALF_RATIO = 1.72
+
+function halfExtendsForRectInPixelSpace(
+  scale: number,
+  bias: BoardGrowthBias,
+): { halfW: number; halfH: number } {
+  if (bias === 'landscape') {
+    return { halfW: scale, halfH: scale / RECT_LANDSCAPE_HALF_RATIO }
+  }
+  return { halfW: scale / RECT_LANDSCAPE_HALF_RATIO, halfH: scale }
+}
+
+/** All hex centers whose pixel coords lie in an axis-aligned rectangle (uses R=1 layout). */
+function hexesInAxisAlignedPixelBox(halfW: number, halfH: number): Map<string, HexCoord> {
+  const m = new Map<string, HexCoord>()
+  const span = Math.min(
+    220,
+    Math.ceil(Math.max(halfW, halfH) * 2) + 12,
+  )
+  for (let q = -span; q <= span; q++) {
+    for (let r = -span; r <= span; r++) {
+      const p = axialToPixel({ q, r }, 1)
+      if (Math.abs(p.x) <= halfW + 1e-10 && Math.abs(p.y) <= halfH + 1e-10) {
+        m.set(coordKey(q, r), { q, r })
+      }
+    }
+  }
+  return m
+}
+
+function largestConnectedSubmap(coordMap: Map<string, HexCoord>): Map<string, HexCoord> {
+  const visited = new Set<string>()
+  let bestKeys: string[] = []
+  for (const k of coordMap.keys()) {
+    if (visited.has(k)) continue
+    const comp: string[] = []
+    const stack = [k]
+    while (stack.length) {
+      const cur = stack.pop()!
+      if (visited.has(cur)) continue
+      visited.add(cur)
+      comp.push(cur)
+      const c = coordMap.get(cur)!
+      for (const n of axialNeighbors(c)) {
+        const nk = coordKey(n.q, n.r)
+        if (coordMap.has(nk) && !visited.has(nk)) stack.push(nk)
+      }
+    }
+    if (comp.length > bestKeys.length) bestKeys = comp
+  }
+  const out = new Map<string, HexCoord>()
+  for (const k of bestKeys) out.set(k, coordMap.get(k)!)
+  return out
+}
+
+function trimHexCountPreservingConnectivity(
+  rng: Rng,
+  coordMap: Map<string, HexCoord>,
+  target: number,
+): Map<string, HexCoord> | null {
+  if (coordMap.size < target) return null
+  if (coordMap.size === target) return coordMap
+  const m = new Map(coordMap)
+  let guard = 0
+  const maxG = (coordMap.size - target) * 40 + 200
+  while (m.size > target && guard < maxG) {
+    guard++
+    const removable = [...m.keys()].filter((k) => {
+      const next = new Map(m)
+      next.delete(k)
+      return isConnectedHexCoordMap(next)
+    })
+    if (removable.length === 0) return null
+    const scored = removable.map((k) => {
+      const c = m.get(k)!
+      const p = axialToPixel(c, 1)
+      return { k, score: p.x * p.x + p.y * p.y + nextFloat(rng) * 1e-6 }
+    })
+    scored.sort((a, b) => b.score - a.score)
+    m.delete(scored[0]!.k)
+  }
+  return m.size === target ? m : null
+}
+
+/**
+ * Axis-aligned rectangle in pixel/world space (after centering, fills the viewport silhouette).
+ * Not an organic blob — interior is solid; “Full” uses this instead of growBlobCoords.
+ */
+function growRectangularHexCoords(
+  rng: Rng,
+  target: number,
+  bias: BoardGrowthBias,
+): Map<string, HexCoord> | null {
+  let lo = 1.2
+  let hi = 95
+  let best: Map<string, HexCoord> | null = null
+  for (let it = 0; it < 56; it++) {
+    const s = (lo + hi) / 2
+    const { halfW, halfH } = halfExtendsForRectInPixelSpace(s, bias)
+    let m = hexesInAxisAlignedPixelBox(halfW, halfH)
+    if (!isConnectedHexCoordMap(m)) {
+      m = largestConnectedSubmap(m)
+    }
+    if (m.size >= target) {
+      best = m
+      hi = s
+    } else {
+      lo = s
+    }
+  }
+  if (!best || best.size < target) return null
+  let out = best
+  if (out.size > target) {
+    const trimmed = trimHexCountPreservingConnectivity(rng, out, target)
+    if (!trimmed) return null
+    out = trimmed
+  }
+  return out.size === target ? out : null
+}
+
 /** Remove hexes (lake voids) while keeping one connected landmass. */
 function carveInteriorLakes(
   rng: Rng,
@@ -541,11 +662,16 @@ export interface GeneratedBoard {
   islandCount: IslandCount
 }
 
+/** `rect` = axis-aligned block of hexes (Full preset); `organic` = grown blob. */
+export type BoardLayoutMode = 'organic' | 'rect'
+
 export interface GenerateBoardOptions {
   growthBias?: BoardGrowthBias
   islandCount?: IslandCount
   /** When false, skip interior lake carving (single-island only). @default true */
   lakes?: boolean
+  /** `rect` fills a rectangular silhouette in world space (single-island only). @default organic */
+  layout?: BoardLayoutMode
 }
 
 const LAKE_MIN_TARGET = 36
@@ -570,7 +696,18 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
     let coordMap: Map<string, HexCoord>
     let islandOfKey: Map<string, number>
 
-    if (kEff === 1) {
+    const useRectLayout = opts?.layout === 'rect' && kEff === 1
+
+    if (kEff === 1 && useRectLayout) {
+      const rectMap = growRectangularHexCoords(rng, target, growthBias)
+      if (!rectMap || rectMap.size !== target) {
+        attempt++
+        continue
+      }
+      coordMap = rectMap
+      islandOfKey = new Map()
+      for (const k of coordMap.keys()) islandOfKey.set(k, 0)
+    } else if (kEff === 1) {
       let growTarget = target
       let lakeRemove = 0
       const useLakes = (opts?.lakes !== false) && target >= LAKE_MIN_TARGET
@@ -659,17 +796,19 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
       continue
     }
 
-    const b = pixelBoundsOfCoordSet(coordMap)
-    const aspect = pixelAspectRatioFromBounds(b.minX, b.maxX, b.minY, b.maxY)
-    const relaxAspect = attempt >= maxAttempts - ASPECT_RELAX_LAST_ATTEMPTS
-    if (!relaxAspect) {
-      if (growthBias === 'landscape' && aspect < MIN_BOARD_PIXEL_ASPECT) {
-        attempt++
-        continue
-      }
-      if (growthBias === 'portrait' && aspect > MAX_BOARD_PIXEL_ASPECT_PORTRAIT) {
-        attempt++
-        continue
+    if (!useRectLayout) {
+      const b = pixelBoundsOfCoordSet(coordMap)
+      const aspect = pixelAspectRatioFromBounds(b.minX, b.maxX, b.minY, b.maxY)
+      const relaxAspect = attempt >= maxAttempts - ASPECT_RELAX_LAST_ATTEMPTS
+      if (!relaxAspect) {
+        if (growthBias === 'landscape' && aspect < MIN_BOARD_PIXEL_ASPECT) {
+          attempt++
+          continue
+        }
+        if (growthBias === 'portrait' && aspect > MAX_BOARD_PIXEL_ASPECT_PORTRAIT) {
+          attempt++
+          continue
+        }
       }
     }
 

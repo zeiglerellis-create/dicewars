@@ -53,6 +53,19 @@ describe('estimateLandHexCountForViewport', () => {
   })
 })
 
+describe('rect layout (Full maps)', () => {
+  it('produces exactly N connected tiles with axis-aligned footprint', () => {
+    const rng = createRng(55_019)
+    const { tiles, tileIds } = generateBoard(rng, 52, {
+      islandCount: 1,
+      layout: 'rect',
+      lakes: false,
+    })
+    expect(tileIds.length).toBe(52)
+    expect(validateConnectivity(tiles, tileIds, 52)).toBe(true)
+  })
+})
+
 describe('boardGen', () => {
   it('creates exactly N tiles', () => {
     const rng = createRng(42)
