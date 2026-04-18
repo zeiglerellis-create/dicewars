@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   fastForwardBotsToHumanTurn,
   runBotBattleAttack,
@@ -35,7 +35,9 @@ const BOT_BATTLE_STEP_DELAY_MS = 480
 const REINFORCEMENT_TICK_MS = 95
 
 export default function App() {
-  const [game, setGame] = useState(() => createInitialGameState(40))
+  const [game, setGame] = useState(() =>
+    createInitialGameState(40, { boardHexPreset: 'full' }),
+  )
   const [error, setError] = useState<string | null>(null)
   const boardWrapRef = useRef<HTMLDivElement>(null)
 
@@ -262,6 +264,16 @@ export default function App() {
     setError(null)
   }, [])
 
+  useLayoutEffect(() => {
+    setGame((prev) => {
+      if (prev.phase !== 'PREGAME' || prev.boardHexPreset !== 'full') return prev
+      const s = structuredClone(prev)
+      const err = setBoardHexPresetPregame(s, 'full', measureBoardAreaCss())
+      if (err) queueMicrotask(() => setError(err))
+      return s
+    })
+  }, [measureBoardAreaCss])
+
   useEffect(() => {
     if (game.phase !== 'PREGAME' || game.boardHexPreset !== 'full') return
     let t: ReturnType<typeof setTimeout>
@@ -300,7 +312,6 @@ export default function App() {
           <BoardChrome
             game={game}
             onRandomizeBoard={onRandomizeBoard}
-            onStartGame={onStartGame}
             onSetPlayerCount={onSetPlayerCount}
             onSetBoardHexPreset={onSetBoardHexPreset}
             onSetIslandCount={onSetIslandCount}
@@ -312,6 +323,7 @@ export default function App() {
           onEndTurn={onEndTurn}
           onSkipAiTurns={onSkipAiTurns}
           onSetReinforcementBatchSize={onSetReinforcementBatchSize}
+          onPregameStart={onStartGame}
         />
       </div>
 

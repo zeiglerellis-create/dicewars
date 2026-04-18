@@ -64,6 +64,17 @@ describe('rect layout (Full maps)', () => {
     expect(tileIds.length).toBe(52)
     expect(validateConnectivity(tiles, tileIds, 52)).toBe(true)
   })
+
+  it('carves interior lakes by default (same land count, varied voids)', () => {
+    const rng = createRng(70_021)
+    const n = 48
+    const { tiles, tileIds } = generateBoard(rng, n, {
+      islandCount: 1,
+      layout: 'rect',
+    })
+    expect(tileIds.length).toBe(n)
+    expect(validateConnectivity(tiles, tileIds, n)).toBe(true)
+  })
 })
 
 describe('boardGen', () => {

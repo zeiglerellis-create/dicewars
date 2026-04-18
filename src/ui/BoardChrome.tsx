@@ -11,7 +11,6 @@ import {
 export interface BoardChromeProps {
   game: GameState
   onRandomizeBoard: () => void
-  onStartGame: () => void
   onSetPlayerCount: (n: number) => void
   onSetBoardHexPreset: (n: BoardHexPreset) => void
   onSetIslandCount: (n: number) => void
@@ -23,6 +22,8 @@ export interface BoardStatusStripProps {
   onEndTurn: () => void
   onSkipAiTurns: () => void
   onSetReinforcementBatchSize: (batch: ManualReinforceBatch) => void
+  /** Shown in the turn-actions slot during PREGAME (same column as Skip / End turn). */
+  onPregameStart?: () => void
 }
 
 function reinforcementPrompt(game: GameState): { title: string; detail: string } | null {
@@ -122,6 +123,7 @@ export function BoardStatusStrip({
   onEndTurn,
   onSkipAiTurns,
   onSetReinforcementBatchSize,
+  onPregameStart,
 }: BoardStatusStripProps) {
   const p = game.currentPlayer
   const manualReinforce = game.phase === 'BATTLE' && game.battle.subPhase === 'MANUAL_REINFORCE'
@@ -138,12 +140,13 @@ export function BoardStatusStrip({
     !manualReinforce
 
   const pregame = game.phase === 'PREGAME'
+  const showPregameStart = pregame && onPregameStart
 
   const prompt = pregame
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Hexes: Small/Medium/Large or Full (fills the board area; hex count from window size, min tap size preserved). Land can include interior “lakes” (void). Optional manual stalemate reinforce when 2 players remain and avg ≥7 dice/hex. One island: no routes. Two or three islands: routes in the void (each landmass ≥2 links). ↻ new map; Start when ready.',
+          '⟳ above randomizes the map. Open “Map & players” for islands, size, and options.',
       }
     : manualReinforcePrompt(game) ??
       reinforcementPrompt(game) ??
@@ -154,7 +157,8 @@ export function BoardStatusStrip({
   const showBatch =
     manualReinforce && mr && !game.players.isBot[p]
 
-  const showPromptActions = !pregame && (showSkipAi || canEndTurn || showBatch)
+  const showPromptActions =
+    showPregameStart || (!pregame && (showSkipAi || canEndTurn || showBatch))
 
   if (!prompt) return null
 
@@ -167,6 +171,16 @@ export function BoardStatusStrip({
         </div>
         {showPromptActions && (
           <div className="dw-board-prompt-actions" role="toolbar" aria-label="Turn actions">
+            {showPregameStart && onPregameStart && (
+              <button
+                type="button"
+                className="dw-board-pregame-start-btn"
+                onClick={onPregameStart}
+                title="Start game"
+              >
+                Start game
+              </button>
+            )}
             {showBatch && mr && (
               <div className="dw-reinforce-batch" role="group" aria-label="Dice per tap">
                 {([5, 10, 'all'] as const).map((key) => {
@@ -188,7 +202,7 @@ export function BoardStatusStrip({
                 })}
               </div>
             )}
-            {showSkipAi && (
+            {!pregame && showSkipAi && (
               <button
                 type="button"
                 className="dw-board-icon-btn dw-board-icon-btn--secondary"
@@ -199,7 +213,7 @@ export function BoardStatusStrip({
                 <IconSkipAi />
               </button>
             )}
-            {canEndTurn && (
+            {!pregame && canEndTurn && (
               <button
                 type="button"
                 className="dw-board-icon-btn dw-board-icon-btn--primary"
@@ -220,7 +234,6 @@ export function BoardStatusStrip({
 export function BoardChrome({
   game,
   onRandomizeBoard,
-  onStartGame,
   onSetPlayerCount,
   onSetBoardHexPreset,
   onSetIslandCount,
@@ -231,122 +244,127 @@ export function BoardChrome({
   return (
     <>
       {pregame && (
-        <div className="dw-board-float dw-board-float--setup">
-          <div className="dw-setup-panel">
-            <div className="dw-setup-field">
-              <span className="dw-setup-field-label" id="dw-setup-players-label">
-                Players
-              </span>
-              <select
-                className="dw-setup-select"
-                value={game.playerCount}
-                onChange={(e) => onSetPlayerCount(Number(e.target.value))}
-                aria-labelledby="dw-setup-players-label"
+        <>
+          <div className="dw-board-refresh-top">
+            <button
+              type="button"
+              className="dw-float-refresh"
+              onClick={onRandomizeBoard}
+              aria-label="New random map"
+              title="New random map"
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                aria-hidden
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                {Array.from(
-                  { length: PLAYER_COUNT_MAX - PLAYER_COUNT_MIN + 1 },
-                  (_, i) => PLAYER_COUNT_MIN + i,
-                ).map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="dw-setup-field">
-              <span className="dw-setup-field-label" id="dw-setup-islands-label">
-                Islands
-              </span>
-              <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-islands-label">
-                {ISLAND_PRESETS.map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className={
-                      'dw-setup-size-btn' + (game.islandCount === n ? ' dw-setup-size-btn--active' : '')
-                    }
-                    onClick={() => onSetIslandCount(n)}
-                  >
-                    <span className="dw-setup-size-name">{n === 1 ? 'One' : n === 2 ? 'Two' : 'Three'}</span>
-                    <span className="dw-setup-size-num">{n}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="dw-setup-field dw-setup-field--checkbox">
-              <label className="dw-setup-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={game.manualStalemateReinforce}
-                  onChange={(e) => onSetManualStalemateReinforce(e.target.checked)}
-                />
-                <span>
-                  Manual stalemate reinforce
-                  <span className="dw-setup-checkbox-hint">
-                    2 players left, avg ≥7 dice/hex — place 5 / 10 / all per tap; stacks can exceed 8.
-                  </span>
-                </span>
-              </label>
-            </div>
-
-            <div className="dw-setup-field">
-              <span className="dw-setup-field-label" id="dw-setup-board-label">
-                Hexes
-              </span>
-              <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-board-label">
-                {BOARD_HEX_PRESETS.map((p) => (
-                  <button
-                    key={String(p)}
-                    type="button"
-                    className={
-                      'dw-setup-size-btn' + (game.boardHexPreset === p ? ' dw-setup-size-btn--active' : '')
-                    }
-                    onClick={() => onSetBoardHexPreset(p)}
-                  >
-                    <span className="dw-setup-size-name">{SIZE_LABELS[p]}</span>
-                    <span className="dw-setup-size-num">
-                      {p === 'full' ? `~${game.boardHexCount}` : p}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="dw-setup-actions">
-              <button
-                type="button"
-                className="dw-float-refresh"
-                onClick={onRandomizeBoard}
-                aria-label="New random map"
-                title="New random map"
-              >
-                <svg
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  aria-hidden
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                  <path d="M16 21h5v-5" />
-                </svg>
-              </button>
-              <button type="button" className="btn btn-board primary" onClick={onStartGame}>
-                Start game
-              </button>
-            </div>
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                <path d="M16 21h5v-5" />
+              </svg>
+            </button>
           </div>
-        </div>
-      )}
 
+          <div className="dw-board-float dw-board-float--setup-drawer">
+            <details className="dw-setup-drawer">
+              <summary className="dw-setup-drawer-summary">Map & players</summary>
+              <div className="dw-setup-panel">
+                <div className="dw-setup-field">
+                  <span className="dw-setup-field-label" id="dw-setup-players-label">
+                    Players
+                  </span>
+                  <select
+                    className="dw-setup-select"
+                    value={game.playerCount}
+                    onChange={(e) => onSetPlayerCount(Number(e.target.value))}
+                    aria-labelledby="dw-setup-players-label"
+                  >
+                    {Array.from(
+                      { length: PLAYER_COUNT_MAX - PLAYER_COUNT_MIN + 1 },
+                      (_, i) => PLAYER_COUNT_MIN + i,
+                    ).map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="dw-setup-field">
+                  <span className="dw-setup-field-label" id="dw-setup-islands-label">
+                    Islands
+                  </span>
+                  <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-islands-label">
+                    {ISLAND_PRESETS.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={
+                          'dw-setup-size-btn' +
+                          (game.islandCount === n ? ' dw-setup-size-btn--active' : '')
+                        }
+                        onClick={() => onSetIslandCount(n)}
+                      >
+                        <span className="dw-setup-size-name">
+                          {n === 1 ? 'One' : n === 2 ? 'Two' : 'Three'}
+                        </span>
+                        <span className="dw-setup-size-num">{n}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="dw-setup-field dw-setup-field--checkbox">
+                  <label className="dw-setup-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={game.manualStalemateReinforce}
+                      onChange={(e) => onSetManualStalemateReinforce(e.target.checked)}
+                    />
+                    <span>
+                      Manual stalemate reinforce
+                      <span className="dw-setup-checkbox-hint">
+                        2 players left, avg ≥7 dice/hex — place 5 / 10 / all per tap; stacks can exceed 8.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="dw-setup-field">
+                  <span className="dw-setup-field-label" id="dw-setup-board-label">
+                    Hexes
+                  </span>
+                  <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-board-label">
+                    {BOARD_HEX_PRESETS.map((p) => (
+                      <button
+                        key={String(p)}
+                        type="button"
+                        className={
+                          'dw-setup-size-btn' +
+                          (game.boardHexPreset === p ? ' dw-setup-size-btn--active' : '')
+                        }
+                        onClick={() => onSetBoardHexPreset(p)}
+                      >
+                        <span className="dw-setup-size-name">{SIZE_LABELS[p]}</span>
+                        <span className="dw-setup-size-num">
+                          {p === 'full' ? `~${game.boardHexCount}` : p}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+        </>
+      )}
     </>
   )
 }

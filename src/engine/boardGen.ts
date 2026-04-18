@@ -185,7 +185,8 @@ function trimHexCountPreservingConnectivity(
 
 /**
  * Axis-aligned rectangle in pixel/world space (after centering, fills the viewport silhouette).
- * Not an organic blob — interior is solid; “Full” uses this instead of growBlobCoords.
+ * Not an organic blob — “Full” uses this instead of growBlobCoords. Interior lake voids are optional
+ * (same outer footprint as a slightly denser rect, then carved down to target land count).
  */
 function growRectangularHexCoords(
   rng: Rng,
@@ -253,7 +254,7 @@ function carveInteriorLakes(
 /** Each landmass needs at least this many hexes when using multiple islands. */
 export const MIN_HEXES_PER_ISLAND = 6
 
-export const DEFAULT_ISLAND_COUNT: IslandCount = 2
+export const DEFAULT_ISLAND_COUNT: IslandCount = 1
 
 export function clampIslandCount(n: number): IslandCount {
   const x = Math.floor(Number(n))
@@ -668,9 +669,9 @@ export type BoardLayoutMode = 'organic' | 'rect'
 export interface GenerateBoardOptions {
   growthBias?: BoardGrowthBias
   islandCount?: IslandCount
-  /** When false, skip interior lake carving (single-island only). @default true */
+  /** When false, skip interior lake carving (single-island organic and rect Full). @default true */
   lakes?: boolean
-  /** `rect` fills a rectangular silhouette in world space (single-island only). @default organic */
+  /** `rect` fills a rectangular silhouette in world space (single-island only). Lakes carve interior voids without changing land hex count. @default organic */
   layout?: BoardLayoutMode
 }
 
@@ -699,12 +700,27 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
     const useRectLayout = opts?.layout === 'rect' && kEff === 1
 
     if (kEff === 1 && useRectLayout) {
-      const rectMap = growRectangularHexCoords(rng, target, growthBias)
-      if (!rectMap || rectMap.size !== target) {
+      let lakeRemove = 0
+      const useLakes = (opts?.lakes !== false) && target >= LAKE_MIN_TARGET
+      if (useLakes) {
+        lakeRemove = Math.min(LAKE_MAX_REM, Math.max(LAKE_MIN_REM, Math.floor(target * LAKE_FR)))
+      }
+      const growTarget = target + lakeRemove
+      const rectMap = growRectangularHexCoords(rng, growTarget, growthBias)
+      if (!rectMap || rectMap.size !== growTarget) {
         attempt++
         continue
       }
-      coordMap = rectMap
+      if (useLakes && lakeRemove > 0) {
+        const carved = carveInteriorLakes(rng, rectMap, lakeRemove)
+        if (!carved || carved.size !== target) {
+          attempt++
+          continue
+        }
+        coordMap = carved
+      } else {
+        coordMap = rectMap
+      }
       islandOfKey = new Map()
       for (const k of coordMap.keys()) islandOfKey.set(k, 0)
     } else if (kEff === 1) {
