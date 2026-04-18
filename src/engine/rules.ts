@@ -192,7 +192,7 @@ export interface CreateGameOptions {
 
 function defaultPregameBoardCss(): { width: number; height: number } {
   if (typeof globalThis !== 'undefined' && 'innerWidth' in globalThis) {
-    const w = globalThis as Window
+    const w = globalThis as unknown as Window
     return {
       width: Math.max(120, w.innerWidth),
       height: Math.max(160, Math.floor(w.innerHeight * 0.52)),

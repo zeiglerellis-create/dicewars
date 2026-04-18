@@ -61,9 +61,10 @@ export function estimateLandHexCountForViewport(
 ): number {
   const w = Math.max(120, cssWidth)
   const h = Math.max(120, cssHeight)
+  const g = globalThis as unknown as Window
   const dpr =
-    typeof globalThis !== 'undefined' && 'devicePixelRatio' in globalThis
-      ? Math.min(2, (globalThis as Window).devicePixelRatio || 1)
+    typeof globalThis !== 'undefined' && typeof g.devicePixelRatio === 'number'
+      ? Math.min(2, g.devicePixelRatio || 1)
       : 1
   const padCss = 18
   const innerW = Math.max(1, w * dpr - 2 * padCss * dpr)
