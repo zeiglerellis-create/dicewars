@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createRng } from './rng'
 import {
   BOARD_HEX_MIN,
+  estimateLandHexCountForViewport,
   generateBoard,
   validateAdjacencySymmetric,
   validateConnectivity,
@@ -40,6 +41,15 @@ describe('routes', () => {
     const rng = createRng(9001)
     const { islandCount } = generateBoard(rng, 40, { islandCount: 3 })
     expect(islandCount).toBe(3)
+  })
+})
+
+describe('estimateLandHexCountForViewport', () => {
+  it('returns more hexes for a large wide viewport than for a small one', () => {
+    const small = estimateLandHexCountForViewport(360, 520, 'portrait')
+    const large = estimateLandHexCountForViewport(900, 700, 'landscape')
+    expect(large).toBeGreaterThan(small)
+    expect(large).toBeGreaterThan(60)
   })
 })
 

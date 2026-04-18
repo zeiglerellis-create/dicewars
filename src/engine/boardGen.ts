@@ -2,6 +2,7 @@ import { axialDistance, axialNeighbors, axialToPixel, coordKey } from './hex'
 import {
   PLAYER_COUNT_MAX,
   PLAYER_COUNT_MIN,
+  type BoardHexPreset,
   type HexCoord,
   type HexTile,
   type IslandCount,
@@ -36,14 +37,95 @@ export function defaultBoardGrowthBias(): BoardGrowthBias {
 }
 
 export const BOARD_HEX_MIN = 20
-export const BOARD_HEX_MAX = 100
+/** Large “Full” maps can exceed old 100 cap. */
+export const BOARD_HEX_MAX = 220
+
+/** Minimum hex width/height on screen (CSS px) for Full preset — touch-friendly. */
+export const FULL_BOARD_MIN_HEX_CSS_PX = 30
 
 /** Quick size buttons on the setup panel (clamped to min/max). */
-export const BOARD_HEX_PRESETS = [20, 40, 60] as const
-export type BoardHexPreset = (typeof BOARD_HEX_PRESETS)[number]
+export const BOARD_HEX_PRESETS = [20, 40, 60, 'full'] as const satisfies readonly BoardHexPreset[]
 
 export function clampBoardHexCount(n: number): number {
   return Math.min(BOARD_HEX_MAX, Math.max(BOARD_HEX_MIN, Math.floor(Number(n))))
+}
+
+/**
+ * Rough hex count so the fitted board keeps hexes large enough to tap, using the same
+ * world scale as GameCanvas (R=1, pad ≈18 CSS px). Portrait bias uses taller blobs.
+ */
+export function estimateLandHexCountForViewport(
+  cssWidth: number,
+  cssHeight: number,
+  growthBias: BoardGrowthBias = defaultBoardGrowthBias(),
+): number {
+  const w = Math.max(120, cssWidth)
+  const h = Math.max(120, cssHeight)
+  const dpr =
+    typeof globalThis !== 'undefined' && 'devicePixelRatio' in globalThis
+      ? Math.min(2, (globalThis as Window).devicePixelRatio || 1)
+      : 1
+  const padCss = 18
+  const innerW = Math.max(1, w * dpr - 2 * padCss * dpr)
+  const innerH = Math.max(1, h * dpr - 2 * padCss * dpr)
+  /** Need scale * sqrt(3) >= FULL_BOARD_MIN_HEX_CSS_PX * dpr (flat width of pointy hex R=1). */
+  const minScale = (FULL_BOARD_MIN_HEX_CSS_PX * dpr) / Math.sqrt(3)
+  const Kx = growthBias === 'portrait' ? 2.55 : 3.15
+  const Ky = growthBias === 'portrait' ? 3.25 : 2.35
+  const bound = (minScale / 0.98) * 1.02
+  const sqrtN = Math.min(innerW / Kx, innerH / Ky) / bound
+  let n = Math.floor(sqrtN * sqrtN)
+  n = clampBoardHexCount(n)
+  return n
+}
+
+function isConnectedHexCoordMap(coordMap: Map<string, HexCoord>): boolean {
+  if (coordMap.size <= 1) return true
+  const start = [...coordMap.keys()][0]!
+  const seen = new Set<string>([start])
+  const stack = [start]
+  while (stack.length) {
+    const k = stack.pop()!
+    const c = coordMap.get(k)!
+    for (const n of axialNeighbors(c)) {
+      const nk = coordKey(n.q, n.r)
+      if (!coordMap.has(nk) || seen.has(nk)) continue
+      seen.add(nk)
+      stack.push(nk)
+    }
+  }
+  return seen.size === coordMap.size
+}
+
+/** Remove hexes (lake voids) while keeping one connected landmass. */
+function carveInteriorLakes(
+  rng: Rng,
+  coordMap: Map<string, HexCoord>,
+  removeCount: number,
+): Map<string, HexCoord> | null {
+  if (removeCount <= 0) return coordMap
+  const m = new Map(coordMap)
+  let removed = 0
+  let guard = 0
+  const maxGuard = removeCount * 120 + 400
+  while (removed < removeCount && guard < maxGuard) {
+    guard++
+    const candidates = [...m.keys()].filter((k) => {
+      const next = new Map(m)
+      next.delete(k)
+      return isConnectedHexCoordMap(next)
+    })
+    if (candidates.length === 0) return null
+    const interior = candidates.filter((k) => {
+      const c = m.get(k)!
+      return axialNeighbors(c).every((n) => m.has(coordKey(n.q, n.r)))
+    })
+    const pool = interior.length > 0 ? interior : candidates
+    const pick = pool[nextInt(rng, 0, pool.length)]!
+    m.delete(pick)
+    removed++
+  }
+  return removed === removeCount ? m : null
 }
 
 /** Each landmass needs at least this many hexes when using multiple islands. */
@@ -461,7 +543,14 @@ export interface GeneratedBoard {
 export interface GenerateBoardOptions {
   growthBias?: BoardGrowthBias
   islandCount?: IslandCount
+  /** When false, skip interior lake carving (single-island only). @default true */
+  lakes?: boolean
 }
+
+const LAKE_MIN_TARGET = 36
+const LAKE_FR = 0.07
+const LAKE_MIN_REM = 3
+const LAKE_MAX_REM = 24
 
 export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOptions): GeneratedBoard {
   const growthBias = opts?.growthBias ?? 'landscape'
@@ -470,7 +559,7 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
   const target = clampBoardHexCount(size)
   const kEff = effectiveIslandCount(requestedIslands, target)
   const maxNeighbor1 = maxDegreeOneTiles(target)
-  const maxAttempts = target > 60 ? 180 : 120
+  const maxAttempts = target > 90 ? 260 : target > 60 ? 200 : 120
   let attempt = 0
   const baseRngState = rng.state
 
@@ -481,10 +570,25 @@ export function generateBoard(rng: Rng, size: number, opts?: GenerateBoardOption
     let islandOfKey: Map<string, number>
 
     if (kEff === 1) {
-      coordMap = growBlobCoords(rng, target, growthBias)
-      if (coordMap.size !== target) {
+      let growTarget = target
+      let lakeRemove = 0
+      const useLakes = (opts?.lakes !== false) && target >= LAKE_MIN_TARGET
+      if (useLakes) {
+        lakeRemove = Math.min(LAKE_MAX_REM, Math.max(LAKE_MIN_REM, Math.floor(target * LAKE_FR)))
+        growTarget = target + lakeRemove
+      }
+      coordMap = growBlobCoords(rng, growTarget, growthBias)
+      if (coordMap.size !== growTarget) {
         attempt++
         continue
+      }
+      if (useLakes && lakeRemove > 0) {
+        const carved = carveInteriorLakes(rng, coordMap, lakeRemove)
+        if (!carved || carved.size !== target) {
+          attempt++
+          continue
+        }
+        coordMap = carved
       }
       islandOfKey = new Map()
       for (const k of coordMap.keys()) islandOfKey.set(k, 0)
@@ -602,3 +706,5 @@ export function assignRandomOwners(
     tiles[id].owner = ((i % pc) + 1) as PlayerId
   })
 }
+
+export type { BoardHexPreset } from './types'

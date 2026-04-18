@@ -1,10 +1,8 @@
-import {
-  BOARD_HEX_PRESETS,
-  type BoardHexPreset,
-} from '../engine/boardGen'
+import { BOARD_HEX_PRESETS } from '../engine/boardGen'
 import {
   PLAYER_COUNT_MAX,
   PLAYER_COUNT_MIN,
+  type BoardHexPreset,
   type GameState,
   type IslandCount,
   type ManualReinforceBatch,
@@ -86,6 +84,7 @@ const SIZE_LABELS: Record<BoardHexPreset, string> = {
   20: 'Small',
   40: 'Medium',
   60: 'Large',
+  full: 'Full',
 }
 
 const ISLAND_PRESETS: IslandCount[] = [1, 2, 3]
@@ -144,7 +143,7 @@ export function BoardStatusStrip({
     ? {
         title: `Ready · ${game.playerCount} players`,
         detail:
-          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Optional manual stalemate reinforce when 2 players remain and the board averages ≥7 dice per hex. One island: no routes. Two or three islands: colored routes link landmasses in the void (each has ≥2). ↻ new map; Start when ready.',
+          'Starts in battle: 4× dice per tile you own, placed randomly (max 8 per hex). Hexes: Small/Medium/Large or Full (fills the board area; hex count from window size, min tap size preserved). Land can include interior “lakes” (void). Optional manual stalemate reinforce when 2 players remain and avg ≥7 dice/hex. One island: no routes. Two or three islands: routes in the void (each landmass ≥2 links). ↻ new map; Start when ready.',
       }
     : manualReinforcePrompt(game) ??
       reinforcementPrompt(game) ??
@@ -297,17 +296,19 @@ export function BoardChrome({
                 Hexes
               </span>
               <div className="dw-setup-size-btns" role="group" aria-labelledby="dw-setup-board-label">
-                {BOARD_HEX_PRESETS.map((n) => (
+                {BOARD_HEX_PRESETS.map((p) => (
                   <button
-                    key={n}
+                    key={String(p)}
                     type="button"
                     className={
-                      'dw-setup-size-btn' + (game.boardHexCount === n ? ' dw-setup-size-btn--active' : '')
+                      'dw-setup-size-btn' + (game.boardHexPreset === p ? ' dw-setup-size-btn--active' : '')
                     }
-                    onClick={() => onSetBoardHexPreset(n)}
+                    onClick={() => onSetBoardHexPreset(p)}
                   >
-                    <span className="dw-setup-size-name">{SIZE_LABELS[n]}</span>
-                    <span className="dw-setup-size-num">{n}</span>
+                    <span className="dw-setup-size-name">{SIZE_LABELS[p]}</span>
+                    <span className="dw-setup-size-num">
+                      {p === 'full' ? `~${game.boardHexCount}` : p}
+                    </span>
                   </button>
                 ))}
               </div>

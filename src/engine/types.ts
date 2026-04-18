@@ -59,9 +59,16 @@ export interface BattleUiState {
   }
 }
 
+/** Setup size: fixed counts or Full (viewport-based at generation time). */
+export type BoardHexPreset = 20 | 40 | 60 | 'full'
+
 export interface GameState {
-  /** Number of hexes on this map (30–100). */
+  /** Number of land hexes on this map (matches preset or computed for Full). */
   boardHexCount: number
+  /** Selected preset in setup; Full uses `pregameBoardCss` to pick hex count. */
+  boardHexPreset: BoardHexPreset
+  /** Board area in CSS pixels when preset is Full (for regeneration / resize). */
+  pregameBoardCss: { width: number; height: number } | null
   /** Landmass count for this map (may be clamped down if hex count is too small). */
   islandCount: IslandCount
   /** Active players in this session (2–8). */

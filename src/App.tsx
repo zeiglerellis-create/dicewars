@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fastForwardBotsToHumanTurn,
   runBotBattleAttack,
   runBotEndAttackAndReinforce,
   runBotPlacement,
 } from './engine/bots'
-import type { BoardHexPreset } from './engine/boardGen'
-import type { ManualReinforceBatch } from './engine/types'
+import type { BoardHexPreset, ManualReinforceBatch } from './engine/types'
 import {
   battleAttack,
   battleSelectAttacker,
@@ -16,7 +15,7 @@ import {
   manualReinforcementPlaceDice,
   placementClick,
   randomizeBoardPregame,
-  setBoardHexCountPregame,
+  setBoardHexPresetPregame,
   setIslandCountPregame,
   setManualReinforcementBatchSize,
   setManualStalemateReinforcePregame,
@@ -38,6 +37,7 @@ const REINFORCEMENT_TICK_MS = 95
 export default function App() {
   const [game, setGame] = useState(() => createInitialGameState(40))
   const [error, setError] = useState<string | null>(null)
+  const boardWrapRef = useRef<HTMLDivElement>(null)
 
   const onHexClick = useCallback((hexId: string) => {
     setError(null)
@@ -78,10 +78,12 @@ export default function App() {
 
   const onNewGameConfirmed = useCallback(() => {
     setGame((prev) =>
-      createInitialGameState(prev.boardHexCount, {
+      createInitialGameState(prev.boardHexPreset === 'full' ? 40 : prev.boardHexCount, {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
         manualStalemateReinforce: prev.manualStalemateReinforce,
+        boardHexPreset: prev.boardHexPreset,
+        pregameBoardCss: prev.pregameBoardCss,
       }),
     )
     setError(null)
@@ -107,15 +109,34 @@ export default function App() {
     })
   }, [])
 
-  const onSetBoardHexPreset = useCallback((n: BoardHexPreset) => {
-    setError(null)
-    setGame((prev) => {
-      const s = structuredClone(prev)
-      const err = setBoardHexCountPregame(s, n)
-      if (err) queueMicrotask(() => setError(err))
-      return s
-    })
+  const measureBoardAreaCss = useCallback((): { width: number; height: number } => {
+    const el = boardWrapRef.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      return { width: Math.max(120, r.width), height: Math.max(120, r.height) }
+    }
+    return {
+      width: typeof window !== 'undefined' ? Math.max(120, window.innerWidth) : 800,
+      height:
+        typeof window !== 'undefined'
+          ? Math.max(160, Math.floor(window.innerHeight * 0.52))
+          : 560,
+    }
   }, [])
+
+  const onSetBoardHexPreset = useCallback(
+    (preset: BoardHexPreset) => {
+      setError(null)
+      setGame((prev) => {
+        const s = structuredClone(prev)
+        const css = preset === 'full' ? measureBoardAreaCss() : null
+        const err = setBoardHexPresetPregame(s, preset, css)
+        if (err) queueMicrotask(() => setError(err))
+        return s
+      })
+    },
+    [measureBoardAreaCss],
+  )
 
   const onSetManualStalemateReinforce = useCallback((enabled: boolean) => {
     setError(null)
@@ -230,21 +251,45 @@ export default function App() {
 
   const playAgain = useCallback(() => {
     setGame((prev) =>
-      createInitialGameState(prev.boardHexCount, {
+      createInitialGameState(prev.boardHexPreset === 'full' ? 40 : prev.boardHexCount, {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
         manualStalemateReinforce: prev.manualStalemateReinforce,
+        boardHexPreset: prev.boardHexPreset,
+        pregameBoardCss: prev.pregameBoardCss,
       }),
     )
     setError(null)
   }, [])
+
+  useEffect(() => {
+    if (game.phase !== 'PREGAME' || game.boardHexPreset !== 'full') return
+    let t: ReturnType<typeof setTimeout>
+    const onResize = () => {
+      window.clearTimeout(t)
+      t = window.setTimeout(() => {
+        setGame((prev) => {
+          if (prev.phase !== 'PREGAME' || prev.boardHexPreset !== 'full') return prev
+          const s = structuredClone(prev)
+          const err = setBoardHexPresetPregame(s, 'full', measureBoardAreaCss())
+          if (err) queueMicrotask(() => setError(err))
+          return s
+        })
+      }, 380)
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.clearTimeout(t)
+    }
+  }, [game.phase, game.boardHexPreset, measureBoardAreaCss])
 
   return (
     <div className="dice-wars-app">
       <HUD game={game} onNewGameConfirmed={onNewGameConfirmed} errorMessage={error} />
 
       <div className="dw-board-stack">
-        <div className="dw-board-wrap">
+        <div className="dw-board-wrap" ref={boardWrapRef}>
           <GameCanvas
             game={game}
             reinforcementPop={game.reinforcementPop}

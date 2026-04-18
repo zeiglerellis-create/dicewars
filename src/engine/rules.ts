@@ -4,11 +4,19 @@ import {
   clampIslandCount,
   defaultBoardGrowthBias,
   DEFAULT_ISLAND_COUNT,
+  estimateLandHexCountForViewport,
   generateBoard,
 } from './boardGen'
 import { createRng, nextInt, rollD6, type Rng } from './rng'
 import { largestConnectedComponentSize } from './scoring'
-import type { BattleLogEntry, GameState, HexTile, ManualReinforceBatch, PlayerId } from './types'
+import type {
+  BattleLogEntry,
+  BoardHexPreset,
+  GameState,
+  HexTile,
+  ManualReinforceBatch,
+  PlayerId,
+} from './types'
 import { PLAYER_COUNT_MAX, PLAYER_COUNT_MIN } from './types'
 
 function cloneTiles(tiles: Record<string, HexTile>): Record<string, HexTile> {
@@ -176,15 +184,54 @@ export interface CreateGameOptions {
   islandCount?: number
   /** @default true. Manual end-of-turn placement when 2 players and avg dice/hex ≥ 7. */
   manualStalemateReinforce?: boolean
+  /** Defaults from first numeric arg when omitted. */
+  boardHexPreset?: BoardHexPreset
+  /** Measured board area (CSS px) when preset is Full. */
+  pregameBoardCss?: { width: number; height: number } | null
+}
+
+function defaultPregameBoardCss(): { width: number; height: number } {
+  if (typeof globalThis !== 'undefined' && 'innerWidth' in globalThis) {
+    const w = globalThis as Window
+    return {
+      width: Math.max(120, w.innerWidth),
+      height: Math.max(160, Math.floor(w.innerHeight * 0.52)),
+    }
+  }
+  return { width: 800, height: 560 }
 }
 
 export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOptions): GameState {
-  const n = clampBoardHexCount(boardHexCount)
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
   const skipPlacementStart = opts?.skipPlacementStart ?? true
   const manualStalemateReinforce = opts?.manualStalemateReinforce ?? true
   const islandRequest =
     opts?.islandCount !== undefined ? clampIslandCount(opts.islandCount) : DEFAULT_ISLAND_COUNT
+
+  const preset: BoardHexPreset =
+    opts?.boardHexPreset ??
+    (boardHexCount === 20 || boardHexCount === 40 || boardHexCount === 60
+      ? (boardHexCount as BoardHexPreset)
+      : 40)
+
+  let pregameBoardCss: { width: number; height: number } | null =
+    opts?.pregameBoardCss !== undefined ? opts.pregameBoardCss : null
+
+  let n: number
+  if (preset === 'full') {
+    if (!pregameBoardCss) pregameBoardCss = defaultPregameBoardCss()
+    n = clampBoardHexCount(
+      estimateLandHexCountForViewport(
+        pregameBoardCss.width,
+        pregameBoardCss.height,
+        defaultBoardGrowthBias(),
+      ),
+    )
+  } else {
+    n = clampBoardHexCount(boardHexCount)
+    pregameBoardCss = null
+  }
+
   const rng = createRng(randomSeed32())
   const board = generateBoard(rng, n, {
     growthBias: defaultBoardGrowthBias(),
@@ -205,6 +252,8 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
 
   return {
     boardHexCount: n,
+    boardHexPreset: preset,
+    pregameBoardCss,
     islandCount: board.islandCount,
     playerCount,
     skipPlacementStart,
@@ -231,13 +280,28 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
   }
 }
 
+function resolveHexCountForRegeneration(state: GameState): number {
+  if (state.boardHexPreset === 'full' && state.pregameBoardCss) {
+    return clampBoardHexCount(
+      estimateLandHexCountForViewport(
+        state.pregameBoardCss.width,
+        state.pregameBoardCss.height,
+        defaultBoardGrowthBias(),
+      ),
+    )
+  }
+  return clampBoardHexCount(state.boardHexCount)
+}
+
 function regenerateBoardAtCurrentSize(state: GameState): string | null {
   if (state.phase === 'PREGAME') {
     state.stalemateUnlimitedDice = false
     state.manualReinforcement = undefined
   }
+  const n = resolveHexCountForRegeneration(state)
+  state.boardHexCount = n
   const rng = createRng(randomSeed32())
-  const board = generateBoard(rng, state.boardHexCount, {
+  const board = generateBoard(rng, n, {
     growthBias: defaultBoardGrowthBias(),
     islandCount: state.islandCount,
   })
@@ -264,10 +328,48 @@ export function randomizeBoardPregame(state: GameState): string | null {
   return regenerateBoardAtCurrentSize(state)
 }
 
-/** Set hex count (30–100) and regenerate map (pre-game only). */
+/** Set hex count (fixed presets) and regenerate map (pre-game only). */
 export function setBoardHexCountPregame(state: GameState, rawCount: number): string | null {
   if (state.phase !== 'PREGAME') return 'Change size only during setup'
-  state.boardHexCount = clampBoardHexCount(rawCount)
+  const n = clampBoardHexCount(rawCount)
+  state.boardHexCount = n
+  if (n === 20 || n === 40 || n === 60) {
+    state.boardHexPreset = n
+  } else {
+    state.boardHexPreset = 40
+  }
+  state.pregameBoardCss = null
+  return regenerateBoardAtCurrentSize(state)
+}
+
+/** Set board size preset including Full (pass measured CSS rect for Full). */
+export function setBoardHexPresetPregame(
+  state: GameState,
+  preset: BoardHexPreset,
+  boardCss?: { width: number; height: number } | null,
+): string | null {
+  if (state.phase !== 'PREGAME') return 'Change size only during setup'
+  state.boardHexPreset = preset
+  if (preset === 'full') {
+    if (boardCss) {
+      state.pregameBoardCss = {
+        width: Math.max(120, boardCss.width),
+        height: Math.max(120, boardCss.height),
+      }
+    } else if (!state.pregameBoardCss) {
+      state.pregameBoardCss = defaultPregameBoardCss()
+    }
+    state.boardHexCount = clampBoardHexCount(
+      estimateLandHexCountForViewport(
+        state.pregameBoardCss!.width,
+        state.pregameBoardCss!.height,
+        defaultBoardGrowthBias(),
+      ),
+    )
+  } else {
+    state.pregameBoardCss = null
+    state.boardHexCount = clampBoardHexCount(preset)
+  }
   return regenerateBoardAtCurrentSize(state)
 }
 
@@ -684,10 +786,12 @@ export function flushReinforcementAnimation(state: GameState): void {
 }
 
 export function resetGame(state: GameState): void {
-  const next = createInitialGameState(state.boardHexCount, {
+  const next = createInitialGameState(state.boardHexPreset === 'full' ? 40 : state.boardHexCount, {
     playerCount: state.playerCount,
     islandCount: state.islandCount,
     manualStalemateReinforce: state.manualStalemateReinforce,
+    boardHexPreset: state.boardHexPreset,
+    pregameBoardCss: state.pregameBoardCss,
   })
   Object.assign(state, next)
 }
