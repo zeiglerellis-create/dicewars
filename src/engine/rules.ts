@@ -184,7 +184,7 @@ export interface CreateGameOptions {
   islandCount?: number
   /** @default true. Manual end-of-turn placement when 2 players and avg dice/hex ≥ 7. */
   manualStalemateReinforce?: boolean
-  /** Risk-lite: start-of-turn manual reinforce (+5 + largest group on first pool per player). */
+  /** Risk-lite: start-of-turn manual reinforce (5 dice first pool per player, then largest group size). */
   riskLiteMode?: boolean
   /** Defaults from first numeric arg when omitted. */
   boardHexPreset?: BoardHexPreset
@@ -711,7 +711,7 @@ export function battleCancelSelection(state: GameState): void {
 
 /**
  * Risk-lite: offer manual dice at the **start** of the current player's turn (after they become current).
- * First pool per player: RISK_LITE_OPENING_BONUS + largest contiguous group; later turns: group size only.
+ * First pool per player: exactly RISK_LITE_OPENING_BONUS dice; later turns: largest contiguous group size.
  */
 export function offerRiskLiteStartReinforce(state: GameState, depth = 0): void {
   if (!state.riskLiteMode || state.phase !== 'BATTLE') return
@@ -727,12 +727,13 @@ export function offerRiskLiteStartReinforce(state: GameState, depth = 0): void {
     return
   }
 
-  const L = largestConnectedComponentSize(p, state.tiles, state.tileIds)
   const useOpening = !state.riskLiteOpeningUsed[p]
   if (useOpening) {
     state.riskLiteOpeningUsed[p] = true
   }
-  const remaining = useOpening ? RISK_LITE_OPENING_BONUS + L : L
+  const remaining = useOpening
+    ? RISK_LITE_OPENING_BONUS
+    : largestConnectedComponentSize(p, state.tiles, state.tileIds)
 
   if (remaining <= 0) {
     state.battle.subPhase = 'CHOOSING_ATTACK'

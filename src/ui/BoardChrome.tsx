@@ -47,7 +47,7 @@ function manualReinforcePrompt(game: GameState): { title: string; detail: string
   if (timing === 'turn_start') {
     return {
       title: `Place reinforcements · ${mr.remaining} left`,
-      detail: `Start of turn — +1, +5, +10, or All per tap. First pool each player: +${RISK_LITE_OPENING_BONUS} plus largest contiguous group; later pools match group size.`,
+      detail: `Start of turn — +1, +5, +10, or All per tap. First pool each player: ${RISK_LITE_OPENING_BONUS} dice; after that, pool size equals your largest contiguous group.`,
     }
   }
   return {
@@ -331,8 +331,8 @@ export function BoardChrome({
                       Risk-lite
                       <span className="dw-setup-checkbox-hint">
                         Reinforce at the start of each turn (manual +1 / +5 / +10 / All). First pool per player:
-                        +5 plus largest contiguous group; later pools match group size. Turns off end-of-turn
-                        reinforce.
+                        5 dice; after that, pool size matches your largest linked (contiguous) group. Turns off
+                        end-of-turn reinforce.
                       </span>
                     </span>
                   </label>

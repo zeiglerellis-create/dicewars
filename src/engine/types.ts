@@ -89,7 +89,7 @@ export interface GameState {
    * First start-of-turn pool per player includes +5 plus largest contiguous group size.
    */
   riskLiteMode: boolean
-  /** Per player: whether the one-time +5 opening bonus was already applied to their first start pool. */
+  /** Per player: whether their first start-of-turn reinforce pool (flat 5 dice) was already used. */
   riskLiteOpeningUsed: Partial<Record<PlayerId, boolean>>
   /**
    * Once manual stalemate reinforce has triggered, battle/placement caps use unlimited stacking
