@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { battleOutcome, stalemateManualReinforceTrigger } from './rules'
+import { battleOutcome, riskLiteReinforceDiceFromOwnedTiles, stalemateManualReinforceTrigger } from './rules'
 import type { GameState, PlayerId } from './types'
 
 function minimalTiles(
@@ -56,6 +56,16 @@ describe('battleOutcome', () => {
         expect(lose.defenderDiceAfter).toBeGreaterThanOrEqual(1)
       }
     }
+  })
+})
+
+describe('riskLiteReinforceDiceFromOwnedTiles', () => {
+  it('is ⌈n/3⌉ for positive n', () => {
+    expect(riskLiteReinforceDiceFromOwnedTiles(0)).toBe(0)
+    expect(riskLiteReinforceDiceFromOwnedTiles(1)).toBe(1)
+    expect(riskLiteReinforceDiceFromOwnedTiles(3)).toBe(1)
+    expect(riskLiteReinforceDiceFromOwnedTiles(4)).toBe(2)
+    expect(riskLiteReinforceDiceFromOwnedTiles(9)).toBe(3)
   })
 })
 

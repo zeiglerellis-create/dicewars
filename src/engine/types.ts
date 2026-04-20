@@ -86,7 +86,7 @@ export interface GameState {
   manualStalemateReinforce: boolean
   /**
    * Risk-lite: reinforcements at **start** of each turn (manual +1/+5/+10/All), not end.
-   * First start-of-turn pool per player includes +5 plus largest contiguous group size.
+   * After the first pool: ⌈owned hexes / 3⌉ dice per turn (see rules).
    */
   riskLiteMode: boolean
   /** Per player: whether their first start-of-turn reinforce pool (flat 5 dice) was already used. */

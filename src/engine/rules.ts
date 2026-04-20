@@ -192,8 +192,14 @@ export interface CreateGameOptions {
   pregameBoardCss?: { width: number; height: number } | null
 }
 
-/** Extra dice in the first start-of-turn manual pool for each player (plus largest contiguous group). */
+/** Flat dice count for each player’s first Risk-lite start-of-turn pool. */
 export const RISK_LITE_OPENING_BONUS = 5
+
+/** After the opening pool: ⌈ownedHexes / 3⌉ reinforce dice (Risk-lite). */
+export function riskLiteReinforceDiceFromOwnedTiles(ownedHexCount: number): number {
+  if (ownedHexCount <= 0) return 0
+  return Math.ceil(ownedHexCount / 3)
+}
 
 function defaultPregameBoardCss(): { width: number; height: number } {
   if (typeof globalThis !== 'undefined' && 'innerWidth' in globalThis) {
@@ -711,7 +717,7 @@ export function battleCancelSelection(state: GameState): void {
 
 /**
  * Risk-lite: offer manual dice at the **start** of the current player's turn (after they become current).
- * First pool per player: exactly RISK_LITE_OPENING_BONUS dice; later turns: largest contiguous group size.
+ * First pool per player: exactly RISK_LITE_OPENING_BONUS dice; later: ⌈owned tiles / 3⌉.
  */
 export function offerRiskLiteStartReinforce(state: GameState, depth = 0): void {
   if (!state.riskLiteMode || state.phase !== 'BATTLE') return
@@ -733,7 +739,7 @@ export function offerRiskLiteStartReinforce(state: GameState, depth = 0): void {
   }
   const remaining = useOpening
     ? RISK_LITE_OPENING_BONUS
-    : largestConnectedComponentSize(p, state.tiles, state.tileIds)
+    : riskLiteReinforceDiceFromOwnedTiles(owned.length)
 
   if (remaining <= 0) {
     state.battle.subPhase = 'CHOOSING_ATTACK'

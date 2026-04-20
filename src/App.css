@@ -993,6 +993,12 @@
     letter-spacing: 0.02em;
   }
 
+  .player-card--risk-lite .player-card__compact-metric--emphasis .player-card__compact-val {
+    font-size: 0.66rem;
+    color: var(--text-h);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--player-accent) 35%, transparent);
+  }
+
   .dw-board-wrap {
     min-height: 180px;
   }

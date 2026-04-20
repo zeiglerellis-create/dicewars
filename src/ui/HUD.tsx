@@ -30,9 +30,13 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
     return { id, ...playerTerritoryStats(id, game.tiles, game.tileIds) }
   })
   const playerRows = playerRowsAll.filter((r) => r.owned > 0)
+  const riskLite = game.riskLiteMode
   const maxCluster = Math.max(1, ...playerRows.map((r) => r.largestTouchingGroup), 0)
   const topCluster =
     playerRows.length > 0 ? Math.max(...playerRows.map((r) => r.largestTouchingGroup)) : 0
+  const maxTilesOnBoard = Math.max(1, ...playerRows.map((r) => r.owned))
+  const topTileCount =
+    playerRows.length > 0 ? Math.max(...playerRows.map((r) => r.owned)) : 0
 
   const stripCols = Math.max(1, playerRows.length)
 
@@ -52,11 +56,20 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
             {playerRows.map(({ id, owned, totalDice, largestTouchingGroup }) => {
             const isActive = showCurrentPlayerOutline && id === game.currentPlayer
             const rowColor = game.players.colors[id]
-            const clusterPct = Math.round((100 * largestTouchingGroup) / maxCluster)
+            const clusterPct = riskLite
+              ? Math.round((100 * owned) / maxTilesOnBoard)
+              : Math.round((100 * largestTouchingGroup) / maxCluster)
             const tiesForTopCluster =
               topCluster > 0 &&
               largestTouchingGroup === topCluster &&
               playerRows.filter((r) => r.largestTouchingGroup === topCluster).length > 1
+            const tiesForTopTiles =
+              topTileCount > 0 &&
+              owned === topTileCount &&
+              playerRows.filter((r) => r.owned === topTileCount).length > 1
+            const isLeaderCluster =
+              !riskLite && topCluster > 0 && largestTouchingGroup === topCluster
+            const isLeaderTiles = riskLite && topTileCount > 0 && owned === topTileCount
               return (
                 <article
                   key={id}
@@ -64,8 +77,9 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
                   aria-current={isActive ? 'true' : undefined}
                   className={
                     'player-card' +
+                    (riskLite ? ' player-card--risk-lite' : '') +
                     (isActive ? ' player-card--active' : '') +
-                    (topCluster > 0 && largestTouchingGroup === topCluster ? ' player-card--cluster-top' : '')
+                    (isLeaderCluster || isLeaderTiles ? ' player-card--cluster-top' : '')
                   }
                   style={{ '--player-accent': rowColor } as CSSProperties}
                 >
@@ -77,7 +91,7 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
                       <span className="player-card__role">{game.players.isBot[id] ? 'AI' : 'You'}</span>
                     </div>
                     <div className="player-card__head-right">
-                      {topCluster > 0 && largestTouchingGroup === topCluster && (
+                      {isLeaderCluster && (
                         <span
                           className="player-card__crown"
                           title={tiesForTopCluster ? 'Tied for biggest cluster' : 'Biggest cluster on the board'}
@@ -86,36 +100,82 @@ export function HUD({ game, onNewGameConfirmed, errorMessage }: HUDProps) {
                           ◆
                         </span>
                       )}
+                      {isLeaderTiles && (
+                        <span
+                          className="player-card__crown"
+                          title={tiesForTopTiles ? 'Tied for most tiles' : 'Most tiles on the board'}
+                          aria-label={tiesForTopTiles ? 'Tied for most tiles' : 'Most tiles on the board'}
+                        >
+                          ◆
+                        </span>
+                      )}
                     </div>
                   </header>
                   <div
                     className="player-card__compact-metrics"
-                    title="Linked cluster (reinforcement size), tiles owned, total dice"
-                    aria-label={`Player ${id}: ${largestTouchingGroup} linked, ${owned} tiles, ${totalDice} dice`}
+                    title={
+                      riskLite
+                        ? 'Tiles owned (reinforce ⌈tiles/3⌉), largest link, total dice'
+                        : 'Linked cluster (reinforcement size), tiles owned, total dice'
+                    }
+                    aria-label={
+                      riskLite
+                        ? `Player ${id}: ${owned} tiles, ${largestTouchingGroup} linked, ${totalDice} dice`
+                        : `Player ${id}: ${largestTouchingGroup} linked, ${owned} tiles, ${totalDice} dice`
+                    }
                   >
-                    <div className="player-card__compact-metric">
-                      <span className="player-card__compact-val">{largestTouchingGroup}</span>
-                      <span className="player-card__compact-lbl">Linked</span>
-                    </div>
-                    <div className="player-card__compact-metric">
-                      <span className="player-card__compact-val">{owned}</span>
-                      <span className="player-card__compact-lbl">tiles</span>
-                    </div>
-                    <div className="player-card__compact-metric">
-                      <span className="player-card__compact-val">{totalDice}</span>
-                      <span className="player-card__compact-lbl">dice</span>
-                    </div>
+                    {riskLite ? (
+                      <>
+                        <div className="player-card__compact-metric player-card__compact-metric--emphasis">
+                          <span className="player-card__compact-val">{owned}</span>
+                          <span className="player-card__compact-lbl">tiles</span>
+                        </div>
+                        <div className="player-card__compact-metric">
+                          <span className="player-card__compact-val">{largestTouchingGroup}</span>
+                          <span className="player-card__compact-lbl">linked</span>
+                        </div>
+                        <div className="player-card__compact-metric">
+                          <span className="player-card__compact-val">{totalDice}</span>
+                          <span className="player-card__compact-lbl">dice</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="player-card__compact-metric">
+                          <span className="player-card__compact-val">{largestTouchingGroup}</span>
+                          <span className="player-card__compact-lbl">Linked</span>
+                        </div>
+                        <div className="player-card__compact-metric">
+                          <span className="player-card__compact-val">{owned}</span>
+                          <span className="player-card__compact-lbl">tiles</span>
+                        </div>
+                        <div className="player-card__compact-metric">
+                          <span className="player-card__compact-val">{totalDice}</span>
+                          <span className="player-card__compact-lbl">dice</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="player-card__cluster">
                     <div className="player-card__cluster-head">
-                      <span className="player-card__cluster-num">{largestTouchingGroup}</span>
-                      <span className="player-card__cluster-unit">linked</span>
+                      <span className="player-card__cluster-num">
+                        {riskLite ? owned : largestTouchingGroup}
+                      </span>
+                      <span className="player-card__cluster-unit">{riskLite ? 'tiles' : 'linked'}</span>
                     </div>
-                    <p className="player-card__cluster-hint">Largest connected group</p>
+                    <p className="player-card__cluster-hint">
+                      {riskLite
+                        ? `Largest link · ${largestTouchingGroup}`
+                        : 'Largest connected group'}
+                    </p>
                     <div
                       className="player-card__bar"
                       role="img"
-                      aria-label={`Cluster strength ${clusterPct} percent of current leader`}
+                      aria-label={
+                        riskLite
+                          ? `Tiles ${clusterPct}% of current leader`
+                          : `Cluster strength ${clusterPct}% of current leader`
+                      }
                     >
                       <div
                         className="player-card__bar-fill"
