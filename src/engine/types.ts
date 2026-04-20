@@ -26,8 +26,8 @@ export interface HexTile {
 export type Phase = 'PREGAME' | 'PLACEMENT' | 'BATTLE' | 'GAME_OVER'
 export type BattleSubPhase = 'CHOOSING_ATTACK' | 'MANUAL_REINFORCE'
 
-/** Batch size when placing end-of-turn dice in manual stalemate mode. */
-export type ManualReinforceBatch = 5 | 10 | 'all'
+/** Batch size when placing manual reinforcements (risk-lite: +1/+5/+10/All; stalemate: +5/+10/All). */
+export type ManualReinforceBatch = 1 | 5 | 10 | 'all'
 
 export interface BattleLogEntry {
   id: string
@@ -81,9 +81,16 @@ export interface GameState {
   /**
    * When true (default), end-of-turn reinforcements become **manual** (pick hex + batch 5/10/all)
    * once **two players** remain and **average dice per hex ≥ 7**; hexes may exceed 8 in that phase.
-   * Toggle in pre-game setup.
+   * Toggle in pre-game setup. Ignored when `riskLiteMode` is on (reinforce is always manual at turn start).
    */
   manualStalemateReinforce: boolean
+  /**
+   * Risk-lite: reinforcements at **start** of each turn (manual +1/+5/+10/All), not end.
+   * First start-of-turn pool per player includes +5 plus largest contiguous group size.
+   */
+  riskLiteMode: boolean
+  /** Per player: whether the one-time +5 opening bonus was already applied to their first start pool. */
+  riskLiteOpeningUsed: Partial<Record<PlayerId, boolean>>
   /**
    * Once manual stalemate reinforce has triggered, battle/placement caps use unlimited stacking
    * for the rest of the match (latched).
@@ -96,11 +103,13 @@ export interface GameState {
   tileIds: string[]
   placement: PlacementState
   battle: BattleUiState
-  /** Active while human places end-of-turn dice in stalemate manual mode. */
+  /** Active while human places manual reinforcements (risk-lite start or stalemate end). */
   manualReinforcement?: {
     endingPlayer: PlayerId
     remaining: number
     batchSize: ManualReinforceBatch
+    /** `turn_start` = same player attacks after; `turn_end` = advance to next player after. */
+    timing: 'turn_start' | 'turn_end'
   }
   players: {
     colors: Record<PlayerId, string>

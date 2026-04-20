@@ -1,4 +1,5 @@
 import { BOARD_HEX_PRESETS } from '../engine/boardGen'
+import { RISK_LITE_OPENING_BONUS } from '../engine/rules'
 import {
   PLAYER_COUNT_MAX,
   PLAYER_COUNT_MIN,
@@ -14,6 +15,7 @@ export interface BoardChromeProps {
   onSetBoardHexPreset: (n: BoardHexPreset) => void
   onSetIslandCount: (n: number) => void
   onSetManualStalemateReinforce: (enabled: boolean) => void
+  onSetRiskLiteMode: (enabled: boolean) => void
 }
 
 export interface BoardStatusStripProps {
@@ -41,9 +43,16 @@ function manualReinforcePrompt(game: GameState): { title: string; detail: string
   const mr = game.manualReinforcement
   if (!mr) return null
   const b = mr.batchSize === 'all' ? 'All' : String(mr.batchSize)
+  const timing = mr.timing ?? 'turn_end'
+  if (timing === 'turn_start') {
+    return {
+      title: `Place reinforcements · ${mr.remaining} left`,
+      detail: `Start of turn — +1, +5, +10, or All per tap. First pool each player: +${RISK_LITE_OPENING_BONUS} plus largest contiguous group; later pools match group size.`,
+    }
+  }
   return {
     title: `Place reinforcements · ${mr.remaining} left`,
-    detail: `Batch size: ${b} per tap on your hexes (5, 10, or all remaining). Stacks may exceed 8.`,
+    detail: `End of turn — batch ${b} per tap on your hexes (5, 10, or all remaining). Stacks may exceed 8.`,
   }
 }
 
@@ -137,8 +146,7 @@ export function BoardStatusStrip({
   const showSkipAi =
     (game.phase === 'PLACEMENT' || game.phase === 'BATTLE') &&
     game.players.isBot[p] &&
-    !game.reinforcementAnimation &&
-    !manualReinforce
+    !game.reinforcementAnimation
 
   const pregame = game.phase === 'PREGAME'
   const showPregameActions = pregame && onPregameStart && onPregameRandomize
@@ -198,7 +206,10 @@ export function BoardStatusStrip({
             )}
             {showBatch && mr && (
               <div className="dw-reinforce-batch" role="group" aria-label="Dice per tap">
-                {([5, 10, 'all'] as const).map((key) => {
+                {(mr.timing === 'turn_start'
+                  ? ([1, 5, 10, 'all'] as const)
+                  : ([5, 10, 'all'] as const)
+                ).map((key) => {
                   const active =
                     key === 'all' ? mr.batchSize === 'all' : mr.batchSize === key
                   const label = key === 'all' ? 'All' : `+${key}`
@@ -252,6 +263,7 @@ export function BoardChrome({
   onSetBoardHexPreset,
   onSetIslandCount,
   onSetManualStalemateReinforce,
+  onSetRiskLiteMode,
 }: BoardChromeProps) {
   const pregame = game.phase === 'PREGAME'
 
@@ -312,13 +324,38 @@ export function BoardChrome({
                   <label className="dw-setup-checkbox-label">
                     <input
                       type="checkbox"
+                      checked={game.riskLiteMode}
+                      onChange={(e) => onSetRiskLiteMode(e.target.checked)}
+                    />
+                    <span>
+                      Risk-lite
+                      <span className="dw-setup-checkbox-hint">
+                        Reinforce at the start of each turn (manual +1 / +5 / +10 / All). First pool per player:
+                        +5 plus largest contiguous group; later pools match group size. Turns off end-of-turn
+                        reinforce.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="dw-setup-field dw-setup-field--checkbox">
+                  <label
+                    className={
+                      'dw-setup-checkbox-label' + (game.riskLiteMode ? ' dw-setup-checkbox-label--disabled' : '')
+                    }
+                  >
+                    <input
+                      type="checkbox"
                       checked={game.manualStalemateReinforce}
+                      disabled={game.riskLiteMode}
                       onChange={(e) => onSetManualStalemateReinforce(e.target.checked)}
                     />
                     <span>
                       Manual stalemate reinforce
                       <span className="dw-setup-checkbox-hint">
-                        2 players left, avg ≥7 dice/hex — place 5 / 10 / all per tap; stacks can exceed 8.
+                        {game.riskLiteMode
+                          ? 'Not used in Risk-lite (reinforce is always at turn start).'
+                          : '2 players left, avg ≥7 dice/hex — place 5 / 10 / all per tap; stacks can exceed 8.'}
                       </span>
                     </span>
                   </label>

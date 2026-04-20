@@ -184,11 +184,16 @@ export interface CreateGameOptions {
   islandCount?: number
   /** @default true. Manual end-of-turn placement when 2 players and avg dice/hex ≥ 7. */
   manualStalemateReinforce?: boolean
+  /** Risk-lite: start-of-turn manual reinforce (+5 + largest group on first pool per player). */
+  riskLiteMode?: boolean
   /** Defaults from first numeric arg when omitted. */
   boardHexPreset?: BoardHexPreset
   /** Measured board area (CSS px) when preset is Full. */
   pregameBoardCss?: { width: number; height: number } | null
 }
+
+/** Extra dice in the first start-of-turn manual pool for each player (plus largest contiguous group). */
+export const RISK_LITE_OPENING_BONUS = 5
 
 function defaultPregameBoardCss(): { width: number; height: number } {
   if (typeof globalThis !== 'undefined' && 'innerWidth' in globalThis) {
@@ -205,6 +210,7 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
   const playerCount = clampPlayerCount(opts?.playerCount ?? 4)
   const skipPlacementStart = opts?.skipPlacementStart ?? true
   const manualStalemateReinforce = opts?.manualStalemateReinforce ?? true
+  const riskLiteMode = opts?.riskLiteMode ?? false
   const islandRequest =
     opts?.islandCount !== undefined ? clampIslandCount(opts.islandCount) : DEFAULT_ISLAND_COUNT
 
@@ -259,6 +265,8 @@ export function createInitialGameState(boardHexCount = 40, opts?: CreateGameOpti
     playerCount,
     skipPlacementStart,
     manualStalemateReinforce,
+    riskLiteMode,
+    riskLiteOpeningUsed: {},
     stalemateUnlimitedDice: false,
     rngState: rng.state,
     phase: 'PREGAME',
@@ -408,6 +416,7 @@ export function beginPlacementFromPregame(state: GameState): string | null {
   if (state.phase !== 'PREGAME') return 'Not in setup'
   state.stalemateUnlimitedDice = false
   state.manualReinforcement = undefined
+  state.riskLiteOpeningUsed = {}
   state.battle = {
     subPhase: 'CHOOSING_ATTACK',
     selection: {},
@@ -420,6 +429,9 @@ export function beginPlacementFromPregame(state: GameState): string | null {
   if (state.skipPlacementStart) {
     state.phase = 'BATTLE'
     state.currentPlayer = 1
+    if (state.riskLiteMode) {
+      offerRiskLiteStartReinforce(state, 0)
+    }
     return null
   }
 
@@ -450,6 +462,13 @@ export function setManualStalemateReinforcePregame(state: GameState, enabled: bo
   return null
 }
 
+export function setRiskLiteModePregame(state: GameState, enabled: boolean): string | null {
+  if (state.phase !== 'PREGAME') return 'Change this option only during setup'
+  state.riskLiteMode = enabled
+  if (enabled) state.manualStalemateReinforce = false
+  return null
+}
+
 function applyRandomReinforcementUncapped(state: GameState, player: PlayerId, count: number): void {
   const owned = state.tileIds.filter((id) => state.tiles[id].owner === player)
   if (owned.length === 0 || count <= 0) return
@@ -464,9 +483,15 @@ function applyRandomReinforcementUncapped(state: GameState, player: PlayerId, co
 }
 
 function finishManualReinforcementTurn(state: GameState, endingPlayer: PlayerId): void {
+  const prev = state.manualReinforcement
+  const timing = prev?.timing ?? 'turn_end'
   state.manualReinforcement = undefined
   state.battle.subPhase = 'CHOOSING_ATTACK'
   state.battle.selection = {}
+  if (timing === 'turn_start') {
+    applyWinIfAny(state)
+    return
+  }
   state.currentPlayer = nextPlayer(state, endingPlayer)
   applyWinIfAny(state)
 }
@@ -506,6 +531,9 @@ export function setManualReinforcementBatchSize(
   if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'MANUAL_REINFORCE') return 'Not in manual reinforce'
   const mr = state.manualReinforcement
   if (!mr) return 'No manual reinforcement state'
+  if (batch === 1 && mr.timing === 'turn_end') {
+    return 'Use +5, +10, or All for end-of-turn reinforcements'
+  }
   state.manualReinforcement = { ...mr, batchSize: batch }
   return null
 }
@@ -558,6 +586,9 @@ export function placementClick(state: GameState, hexId: string): string | null {
         selection: {},
       }
       state.placement.diceLeftThisTurn = PLACEMENT_DICE_PER_TURN
+      if (state.riskLiteMode) {
+        offerRiskLiteStartReinforce(state, 0)
+      }
     } else {
       state.currentPlayer = state.placement.order[state.placement.orderIndex]
       state.placement.diceLeftThisTurn = PLACEMENT_DICE_PER_TURN
@@ -678,15 +709,74 @@ export function battleCancelSelection(state: GameState): void {
   state.battle.selection.selectedDefenderHexId = undefined
 }
 
+/**
+ * Risk-lite: offer manual dice at the **start** of the current player's turn (after they become current).
+ * First pool per player: RISK_LITE_OPENING_BONUS + largest contiguous group; later turns: group size only.
+ */
+export function offerRiskLiteStartReinforce(state: GameState, depth = 0): void {
+  if (!state.riskLiteMode || state.phase !== 'BATTLE') return
+  if (depth > state.playerCount + 4) return
+
+  const p = state.currentPlayer
+  const owned = state.tileIds.filter((id) => state.tiles[id].owner === p)
+  if (owned.length === 0) {
+    state.currentPlayer = nextPlayer(state, p)
+    applyWinIfAny(state)
+    if (state.phase !== 'BATTLE') return
+    offerRiskLiteStartReinforce(state, depth + 1)
+    return
+  }
+
+  const L = largestConnectedComponentSize(p, state.tiles, state.tileIds)
+  const useOpening = !state.riskLiteOpeningUsed[p]
+  if (useOpening) {
+    state.riskLiteOpeningUsed[p] = true
+  }
+  const remaining = useOpening ? RISK_LITE_OPENING_BONUS + L : L
+
+  if (remaining <= 0) {
+    state.battle.subPhase = 'CHOOSING_ATTACK'
+    state.battle.selection = {}
+    applyWinIfAny(state)
+    return
+  }
+
+  state.stalemateUnlimitedDice = true
+  if (state.players.isBot[p]) {
+    applyRandomReinforcementUncapped(state, p, remaining)
+    state.battle.subPhase = 'CHOOSING_ATTACK'
+    state.battle.selection = {}
+    applyWinIfAny(state)
+    return
+  }
+
+  state.battle.subPhase = 'MANUAL_REINFORCE'
+  state.manualReinforcement = {
+    endingPlayer: p,
+    remaining,
+    batchSize: 1,
+    timing: 'turn_start',
+  }
+  state.battle.selection = {}
+}
+
 export function endAttackPhase(state: GameState): string | null {
   if (state.phase !== 'BATTLE' || state.battle.subPhase !== 'CHOOSING_ATTACK') return 'Cannot end turn now'
   if (state.reinforcementAnimation) return 'Reinforcement in progress'
-  const n = largestConnectedComponentSize(state.currentPlayer, state.tiles, state.tileIds)
   const p = state.currentPlayer
   state.battle.selection.selectedAttackerHexId = undefined
   state.battle.selection.selectedDefenderHexId = undefined
   state.lastBattleOverlay = undefined
 
+  if (state.riskLiteMode) {
+    state.currentPlayer = nextPlayer(state, p)
+    applyWinIfAny(state)
+    if (state.phase !== 'BATTLE') return null
+    offerRiskLiteStartReinforce(state, 0)
+    return null
+  }
+
+  const n = largestConnectedComponentSize(p, state.tiles, state.tileIds)
   const owned = state.tileIds.filter((id) => state.tiles[id].owner === p)
 
   if (owned.length === 0 || n <= 0) {
@@ -698,6 +788,7 @@ export function endAttackPhase(state: GameState): string | null {
   }
 
   const useManualStalemate =
+    !state.riskLiteMode &&
     state.manualStalemateReinforce &&
     stalemateManualReinforceTrigger(state) &&
     n > 0
@@ -710,6 +801,7 @@ export function endAttackPhase(state: GameState): string | null {
         endingPlayer: p,
         remaining: n,
         batchSize: 5,
+        timing: 'turn_end',
       }
       return null
     }
@@ -792,6 +884,7 @@ export function resetGame(state: GameState): void {
     playerCount: state.playerCount,
     islandCount: state.islandCount,
     manualStalemateReinforce: state.manualStalemateReinforce,
+    riskLiteMode: state.riskLiteMode,
     boardHexPreset: state.boardHexPreset,
     pregameBoardCss: state.pregameBoardCss,
   })

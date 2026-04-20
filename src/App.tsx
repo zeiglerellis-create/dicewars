@@ -3,6 +3,7 @@ import {
   fastForwardBotsToHumanTurn,
   runBotBattleAttack,
   runBotEndAttackAndReinforce,
+  runBotManualReinforceAll,
   runBotPlacement,
 } from './engine/bots'
 import type { BoardHexPreset, ManualReinforceBatch } from './engine/types'
@@ -20,6 +21,7 @@ import {
   setManualReinforcementBatchSize,
   setManualStalemateReinforcePregame,
   setPlayerCountPregame,
+  setRiskLiteModePregame,
   tickReinforcementAnimation,
 } from './engine/rules'
 import { BoardChrome, BoardStatusStrip } from './ui/BoardChrome'
@@ -84,6 +86,7 @@ export default function App() {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
         manualStalemateReinforce: prev.manualStalemateReinforce,
+        riskLiteMode: prev.riskLiteMode,
         boardHexPreset: prev.boardHexPreset,
         pregameBoardCss: prev.pregameBoardCss,
       }),
@@ -145,6 +148,16 @@ export default function App() {
     setGame((prev) => {
       const s = structuredClone(prev)
       const err = setManualStalemateReinforcePregame(s, enabled)
+      if (err) queueMicrotask(() => setError(err))
+      return s
+    })
+  }, [])
+
+  const onSetRiskLiteMode = useCallback((enabled: boolean) => {
+    setError(null)
+    setGame((prev) => {
+      const s = structuredClone(prev)
+      const err = setRiskLiteModePregame(s, enabled)
       if (err) queueMicrotask(() => setError(err))
       return s
     })
@@ -231,6 +244,10 @@ export default function App() {
         if (prev.reinforcementAnimation) return prev
         if (prev.phase !== 'BATTLE' || !prev.players.isBot[prev.currentPlayer]) return prev
         const s = structuredClone(prev)
+        if (s.battle.subPhase === 'MANUAL_REINFORCE') {
+          runBotManualReinforceAll(s)
+          return s
+        }
         if (s.battle.subPhase !== 'CHOOSING_ATTACK') return prev
         if (!runBotBattleAttack(s)) {
           runBotEndAttackAndReinforce(s)
@@ -247,6 +264,7 @@ export default function App() {
     game.tileIds,
     game.players,
     game.reinforcementAnimation,
+    game.manualReinforcement?.remaining,
   ])
 
   const [hoveredHexId, setHoveredHexId] = useState<string | null>(null)
@@ -257,6 +275,7 @@ export default function App() {
         playerCount: prev.playerCount,
         islandCount: prev.islandCount,
         manualStalemateReinforce: prev.manualStalemateReinforce,
+        riskLiteMode: prev.riskLiteMode,
         boardHexPreset: prev.boardHexPreset,
         pregameBoardCss: prev.pregameBoardCss,
       }),
@@ -315,6 +334,7 @@ export default function App() {
             onSetBoardHexPreset={onSetBoardHexPreset}
             onSetIslandCount={onSetIslandCount}
             onSetManualStalemateReinforce={onSetManualStalemateReinforce}
+            onSetRiskLiteMode={onSetRiskLiteMode}
           />
         </div>
         <BoardStatusStrip

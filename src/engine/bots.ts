@@ -1,4 +1,4 @@
-import { rollD6, type Rng } from './rng'
+import { nextInt, rollD6, type Rng } from './rng'
 import {
   countEnemyNeighbors,
   enemyNeighborDiceTotal,
@@ -11,8 +11,10 @@ import {
   battleSelectAttacker,
   endAttackPhase,
   flushReinforcementAnimation,
+  manualReinforcementPlaceDice,
   MAX_DICE_PER_HEX,
   placementClick,
+  setManualReinforcementBatchSize,
 } from './rules'
 
 function placementHexScore(state: GameState, hexId: string, player: PlayerId): number {
@@ -109,6 +111,29 @@ export function botPickBestAttack(state: GameState): AttackCand | null {
   return cands[0]
 }
 
+/** Resolve an AI manual reinforcement phase (batch All onto random owned hexes). */
+export function runBotManualReinforceAll(state: GameState): void {
+  let guard = 0
+  while (
+    guard++ < 500 &&
+    state.phase === 'BATTLE' &&
+    state.battle.subPhase === 'MANUAL_REINFORCE' &&
+    state.manualReinforcement
+  ) {
+    const mr = state.manualReinforcement
+    if (!state.players.isBot[mr.endingPlayer]) break
+    if (mr.remaining <= 0) break
+    setManualReinforcementBatchSize(state, 'all')
+    const owned = state.tileIds.filter((id) => state.tiles[id].owner === mr.endingPlayer)
+    if (owned.length === 0) break
+    const rng: Rng = { state: state.rngState }
+    const hex = owned[nextInt(rng, 0, owned.length)]!
+    state.rngState = rng.state
+    const err = manualReinforcementPlaceDice(state, hex)
+    if (err) break
+  }
+}
+
 export function runBotBattleAttack(state: GameState): boolean {
   const p = state.currentPlayer
   if (!state.players.isBot[p] || state.phase !== 'BATTLE' || state.battle.subPhase !== 'CHOOSING_ATTACK') {
@@ -146,6 +171,10 @@ export function fastForwardBotsToHumanTurn(state: GameState): void {
     }
 
     if (state.phase === 'BATTLE') {
+      if (state.battle.subPhase === 'MANUAL_REINFORCE') {
+        runBotManualReinforceAll(state)
+        continue
+      }
       if (state.battle.subPhase !== 'CHOOSING_ATTACK') return
       if (runBotBattleAttack(state)) continue
       runBotEndAttackAndReinforce(state)
